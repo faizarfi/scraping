@@ -1,0 +1,213 @@
+{% extends 'scraper_app/base.html' %}
+
+{% block content %}
+<div style="margin-bottom: 24px;">
+    <a href="{% url 'dashboard' %}" class="btn btn-secondary btn-sm">
+        <i data-lucide="arrow-left" class="lucide-sm"></i>
+        <span>Kembali ke Dashboard</span>
+    </a>
+</div>
+
+<!-- Job Header Card -->
+<div class="glass-card">
+    <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px;">
+        <div>
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                <span class="badge-status {% if job.status == 'completed' %}completed{% elif job.status == 'running' %}running{% elif job.status == 'cancelled' %}cancelled{% elif job.status == 'failed' %}failed{% else %}completed{% endif %}" style="font-size: 0.8rem; padding: 4px 10px;">
+                    {% if job.status == 'completed' %}
+                        <i data-lucide="check" class="lucide-sm"></i>
+                    {% elif job.status == 'running' %}
+                        <i data-lucide="loader" class="lucide-sm" style="animation: spin 1s linear infinite;"></i>
+                    {% elif job.status == 'cancelled' %}
+                        <i data-lucide="circle-slash" class="lucide-sm"></i>
+                    {% else %}
+                        <i data-lucide="alert-circle" class="lucide-sm"></i>
+                    {% endif %}
+                    <span>{{ job.get_status_display }}</span>
+                </span>
+                <h1 style="font-size: 1.5rem; color: #fff; font-weight: 800; letter-spacing: -0.02em;">{{ job.query }}</h1>
+            </div>
+            <p style="color: var(--text-dim); font-size: 0.85rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <span>Kecamatan: <strong style="color: var(--text-muted);">{{ job.district|default:"Semua" }}</strong></span>
+                <span>•</span>
+                <span>Kota: <strong style="color: var(--text-muted);">{{ job.location|default:"Semua" }}</strong></span>
+                <span>•</span>
+                <span>Engine: <strong style="color: var(--text-muted);">{{ job.get_engine_display }}</strong></span>
+                <span>•</span>
+                <span>Waktu: <strong style="color: var(--text-muted);">{{ job.created_at|date:"d M Y, H:i" }} WIB</strong></span>
+            </p>
+            {% if job.status == 'cancelled' %}
+                <div style="margin-top: 12px; padding: 10px 14px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.28); border-radius: var(--radius-sm); color: #fde68a; font-size: 0.84rem; display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="info" class="lucide-sm"></i>
+                    <span>Sesi scraping ini dihentikan oleh pengguna. Seluruh {{ job.total_scraped }} data tempat yang telah terambil tetap tersimpan dengan aman di bawah.</span>
+                </div>
+            {% endif %}
+            {% if job.error_message %}
+                <div style="margin-top: 12px; padding: 10px 14px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: var(--radius-sm); color: #fca5a5; font-size: 0.84rem; display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="alert-triangle" class="lucide-sm"></i>
+                    <span>{{ job.error_message }}</span>
+                </div>
+            {% endif %}
+        </div>
+
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            {% if job.status == 'running' or job.status == 'pending' %}
+            <form method="POST" action="{% url 'cancel_job' job.id %}" onsubmit="return confirm('Hentikan proses scraping ini sekarang? Data yang sudah terkumpul akan tetap disimpan.')">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger-soft">
+                    <i data-lucide="circle-stop" class="lucide-sm"></i>
+                    <span>Hentikan Scraping</span>
+                </button>
+            </form>
+            {% endif %}
+            <a href="{% url 'export_excel' %}?job_id={{ job.id }}" class="btn btn-success">
+                <i data-lucide="file-spreadsheet" class="lucide-sm"></i>
+                <span>Unduh Excel (.xlsx)</span>
+            </a>
+            <a href="{% url 'export_csv' %}?job_id={{ job.id }}" class="btn btn-secondary">
+                <i data-lucide="file-text" class="lucide-sm"></i>
+                <span>Unduh CSV</span>
+            </a>
+            <form method="POST" action="{% url 'delete_job' job.id %}" onsubmit="return confirm('Apakah Anda yakin ingin menghapus sesi ini dan data terkait?')">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger-soft btn-sm">
+                    <i data-lucide="trash-2" class="lucide-sm"></i>
+                    <span>Hapus Sesi</span>
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Places Table for this Job -->
+<div class="glass-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h2 style="font-size: 1.05rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="database" class="lucide-sm" style="color: #60a5fa;"></i>
+            <span>Hasil Scraping Sesi Ini ({{ job.total_scraped }} Tempat Ditemukan)</span>
+        </h2>
+    </div>
+
+    <div class="table-responsive">
+        <table class="pro-table">
+            <thead>
+                <tr>
+                    <th style="width: 45px; text-align: center;">No</th>
+                    <th>Nama Tempat</th>
+                    <th>Kategori</th>
+                    <th>Kecamatan</th>
+                    <th style="text-align: center;">Rating & Ulasan</th>
+                    <th>Alamat</th>
+                    <th>Telepon</th>
+                    <th style="text-align: center;">Aksi</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for place in page_obj %}
+                <tr>
+                    <td style="text-align: center; color: var(--text-dim); font-size: 0.8rem;">
+                        {{ forloop.counter0|add:page_obj.start_index }}
+                    </td>
+                    <td>
+                        <strong style="color: #fff; font-size: 0.92rem;">{{ place.name }}</strong>
+                        {% if place.website %}
+                            <div style="margin-top: 2px;">
+                                <a href="{{ place.website }}" target="_blank" rel="noopener noreferrer" style="color: #60a5fa; font-size: 0.76rem; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                                    <i data-lucide="globe" class="lucide-sm"></i>
+                                    <span>Website</span>
+                                </a>
+                            </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if place.category %}
+                            <span class="badge-category">{{ place.category }}</span>
+                        {% else %}
+                            <span style="color: var(--text-dim); font-size: 0.8rem;">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if place.district %}
+                            <span class="badge-district">{{ place.district }}</span>
+                        {% else %}
+                            <span style="color: var(--text-dim); font-size: 0.8rem;">-</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: center;">
+                        {% if place.rating %}
+                            <div class="rating-badge" style="justify-content: center;">
+                                <i data-lucide="star" style="width: 14px; height: 14px; fill: #fbbf24; color: #fbbf24;"></i>
+                                <span>{{ place.rating }}</span>
+                            </div>
+                            <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 2px;">
+                                ({{ place.reviews_count }} ulasan)
+                            </div>
+                        {% else %}
+                            <span style="color: var(--text-dim); font-size: 0.78rem;">Belum ada rating</span>
+                        {% endif %}
+                    </td>
+                    <td style="max-width: 280px; font-size: 0.82rem; color: var(--text-muted);">
+                        {{ place.address|default:"-" }}
+                    </td>
+                    <td style="white-space: nowrap; font-size: 0.82rem; color: var(--text-muted);">
+                        {% if place.phone %}
+                            <span style="display: inline-flex; align-items: center; gap: 4px;">
+                                <i data-lucide="phone" class="lucide-sm" style="color: var(--text-dim);"></i>
+                                <span>{{ place.phone }}</span>
+                            </span>
+                        {% else %}
+                            <span style="color: var(--text-dim);">-</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: center; white-space: nowrap;">
+                        {% if place.google_maps_url %}
+                            <a href="{{ place.google_maps_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="padding: 4px 8px; font-size: 0.76rem;" title="Buka di Google Maps">
+                                <i data-lucide="external-link" class="lucide-sm"></i>
+                                <span>Maps</span>
+                            </a>
+                        {% endif %}
+                        <button type="button" class="btn btn-ghost btn-sm" style="padding: 4px 8px; font-size: 0.76rem;" onclick="copyPlaceInfo('{{ place.name|escapejs }}', '{{ place.address|escapejs }}', '{{ place.phone|escapejs }}')" title="Salin Data">
+                            <i data-lucide="copy" class="lucide-sm"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 48px 20px; color: var(--text-dim);">
+                        <div style="width: 48px; height: 48px; border-radius: 50%; background: rgba(255,255,255,0.04); display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; color: var(--text-muted);">
+                            <i data-lucide="inbox" class="lucide-lg"></i>
+                        </div>
+                        <h4 style="color: var(--text-muted); font-size: 0.95rem;">Belum Ada Tempat Ditemukan</h4>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <div class="pagination">
+        {% if page_obj.has_previous %}
+            <a href="?page={{ page_obj.previous_page_number }}" class="page-btn">
+                <i data-lucide="chevron-left" class="lucide-sm"></i>
+            </a>
+        {% endif %}
+
+        {% for p in page_obj.paginator.page_range %}
+            {% if page_obj.number == p %}
+                <span class="page-btn active">{{ p }}</span>
+            {% elif p > page_obj.number|add:'-3' and p < page_obj.number|add:'3' %}
+                <a href="?page={{ p }}" class="page-btn">{{ p }}</a>
+            {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+            <a href="?page={{ page_obj.next_page_number }}" class="page-btn">
+                <i data-lucide="chevron-right" class="lucide-sm"></i>
+            </a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

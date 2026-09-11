@@ -1,0 +1,104 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}MapScraper Pro - Enterprise Google Maps Intelligence{% endblock %}</title>
+    <!-- Google Fonts Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Main Style -->
+    <link rel="stylesheet" href="{% static 'scraper_app/css/style.css' %}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="{% url 'dashboard' %}" class="brand">
+                <div class="brand-icon">
+                    <i data-lucide="map-pinned" style="width: 20px; height: 20px;"></i>
+                </div>
+                <div class="brand-text">
+                    <span class="brand-title">MapScraper<span class="brand-badge">PRO</span></span>
+                    <span class="brand-subtitle">Business Intelligence Engine</span>
+                </div>
+            </a>
+            <div class="nav-links">
+                <a href="{% url 'dashboard' %}" class="btn btn-secondary btn-sm">
+                    <i data-lucide="layout-dashboard"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="{% url 'export_excel' %}" class="btn btn-success btn-sm">
+                    <i data-lucide="file-spreadsheet"></i>
+                    <span>Export Excel</span>
+                </a>
+                <a href="{% url 'export_csv' %}" class="btn btn-secondary btn-sm">
+                    <i data-lucide="file-text"></i>
+                    <span>Export CSV</span>
+                </a>
+                <a href="/admin/" target="_blank" class="btn btn-ghost btn-sm">
+                    <i data-lucide="shield-check"></i>
+                    <span>Admin</span>
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Content -->
+    <main class="container">
+        {% if messages %}
+        <div class="flash-container">
+            {% for message in messages %}
+            <div class="flash-alert {{ message.tags }}">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    {% if message.tags == 'success' %}
+                        <i data-lucide="check-circle" class="lucide-sm"></i>
+                    {% elif message.tags == 'info' %}
+                        <i data-lucide="info" class="lucide-sm"></i>
+                    {% elif message.tags == 'warning' %}
+                        <i data-lucide="alert-triangle" class="lucide-sm"></i>
+                    {% else %}
+                        <i data-lucide="alert-circle" class="lucide-sm"></i>
+                    {% endif %}
+                    <span>{{ message }}</span>
+                </div>
+                <button type="button" onclick="this.parentElement.remove()" style="background: none; border: none; color: inherit; cursor: pointer; opacity: 0.7;">
+                    <i data-lucide="x" style="width: 16px; height: 16px;"></i>
+                </button>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-left">
+                <span class="footer-brand">MapScraper Pro</span> • Enterprise Google Maps Data Intelligence
+            </div>
+            <div class="footer-right">
+                <span>Python 3.12</span> • <span>Django 6.1</span> • <span>Playwright Engine</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="{% static 'scraper_app/js/app.js' %}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.lucide) {
+                lucide.createIcons();
+            }
+        });
+    </script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

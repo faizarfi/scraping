@@ -1,0 +1,16 @@
+services:
+  web:
+    build: .
+    container_name: gmaps_scraper_web
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_DEBUG=False
+      - DJANGO_ALLOWED_HOSTS=*
+      - DJANGO_SECRET_KEY=super-secret-key-change-this-in-production
+    volumes:
+      - gmaps_data:/app/data
+
+volumes:
+  gmaps_data:

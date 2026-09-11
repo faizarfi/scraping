@@ -1,0 +1,619 @@
+{% extends 'scraper_app/base.html' %}
+
+{% block content %}
+<!-- Hero Section -->
+<div class="hero-section">
+    <div class="hero-badge">
+        <i data-lucide="sparkles" class="lucide-sm"></i>
+        <span>AI & Playwright Powered Scraper</span>
+    </div>
+    <h1 class="hero-title">
+        Google Maps <span>Data Intelligence</span>
+    </h1>
+    <p class="hero-desc">
+        Ekstrak data direktori bisnis dari Google Maps dengan akurasi tinggi hingga tingkat <strong>Kecamatan</strong>. Dilengkapi algoritma deduplikasi pintar untuk membedakan cabang bisnis resmi serta ekspor terformat ke <strong>Excel (.xlsx)</strong> dan <strong>CSV</strong>.
+    </p>
+</div>
+
+<!-- Stats Row -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon-wrapper blue">
+            <i data-lucide="map-pin" class="lucide-lg"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-value">{{ total_places }}</span>
+            <span class="stat-label">Total Tempat Terkumpul</span>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon-wrapper green">
+            <i data-lucide="activity" class="lucide-lg"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-value">{{ total_jobs }}</span>
+            <span class="stat-label">Total Sesi Scraping</span>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon-wrapper amber">
+            <i data-lucide="star" class="lucide-lg"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-value">{{ avg_rating }}</span>
+            <span class="stat-label">Rata-Rata Rating</span>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon-wrapper purple">
+            <i data-lucide="layers" class="lucide-lg"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-value">
+                {% if top_categories %}
+                    {{ top_categories.0.category|truncatechars:14 }}
+                {% else %}
+                    -
+                {% endif %}
+            </span>
+            <span class="stat-label">Kategori Terbanyak</span>
+        </div>
+    </div>
+</div>
+
+<!-- Scraper Form Card -->
+<div class="glass-card">
+    <div class="card-header">
+        <div class="card-title">
+            <div class="card-title-icon">
+                <i data-lucide="search"></i>
+            </div>
+            <span>Pencarian Bisnis Baru</span>
+        </div>
+        <span style="font-size: 0.8rem; color: var(--text-dim);">Dukungan Filter Kecamatan & Kota</span>
+    </div>
+
+    <form id="scrape-form" method="POST" action="{% url 'start_scrape' %}">
+        {% csrf_token %}
+        <div class="form-row-grid">
+            <!-- Kategori / Query -->
+            <div class="input-field-group">
+                <label class="input-label" for="query-input">
+                    <i data-lucide="tag" class="lucide-sm"></i>
+                    <span>Kategori / Kata Kunci</span>
+                </label>
+                <div style="display: flex; gap: 6px;">
+                    <div class="input-with-icon" style="flex: 1;">
+                        <i data-lucide="search" class="input-icon-prefix lucide-sm"></i>
+                        <input type="text" id="query-input" name="query" class="form-control" placeholder="Pilih atau ketik kategori..." required>
+                    </div>
+                    <select id="category-select" class="form-select-control" style="max-width: 140px;" onchange="if(this.value){ document.getElementById('query-input').value = this.value; }">
+                        <option value="">Preset Kategori</option>
+                        <option value="Cafe">Cafe</option>
+                        <option value="Restoran">Restoran</option>
+                        <option value="Sekolah">Sekolah</option>
+                        <option value="UMKM">UMKM</option>
+                        <option value="Kedai">Kedai</option>
+                        <option value="Hotel">Hotel</option>
+                        <option value="Retail">Retail</option>
+                        <option value="Konveksi">Konveksi</option>
+                        <option value="Pariwisata">Pariwisata</option>
+                        <option value="Warung">Warung</option>
+                        <option value="Puskesmas & Klinik Kesehatan">Puskesmas & Klinik</option>
+                        <option value="Bengkel & Otomotif">Bengkel & Otomotif</option>
+                        <option value="Salon & Barber Shop">Salon & Barber</option>
+                        <option value="Laundry Kiloan">Laundry Kiloan</option>
+                        <option value="Apotek & Toko Obat">Apotek & Toko Obat</option>
+                        <option value="Ekspedisi & Logistik">Ekspedisi & Logistik</option>
+                        <option value="Tempat Kursus & Bimbingan Belajar">Kursus & Bimbel</option>
+                        <option value="Percetakan & Fotokopi">Percetakan & Foto</option>
+                        <option value="Spesialis Logam & Bengkel Las">Bengkel Las</option>
+                        <option value="Pet Shop & Perawatan Hewan">Pet Shop</option>
+                        <option value="SPBU & Pangkalan Gas LPG">SPBU & Gas LPG</option>
+                        <option value="Toko Bangunan & Material">Toko Bangunan</option>
+                        <option value="Fotografer & Studio Foto">Studio Foto</option>
+                        <option value="Rental Kendaraan (Mobil & Motor)">Rental Kendaraan</option>
+                        <option value="Warteg & Rumah Makan Padang">Warteg & RM Padang</option>
+                        <option value="Penyedia Jasa Konstruksi & Kontraktor">Konstruksi</option>
+                        <option value="Toko Buah & Sayur Segar">Buah & Sayur</option>
+                        <option value="Penyedia Layanan Internet & Komputer">Internet & Komputer</option>
+                        <option value="Kantor Notaris & PPAT">Notaris & PPAT</option>
+                        <option value="Showroom Jual Beli Kendaraan Bekas">Showroom Kendaraan</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Kecamatan (Khusus Kabupaten Karanganyar) -->
+            <div class="input-field-group">
+                <label class="input-label" for="district-input">
+                    <i data-lucide="navigation" class="lucide-sm"></i>
+                    <span>Kecamatan (Kab. Karanganyar)</span>
+                </label>
+                <div class="input-with-icon">
+                    <i data-lucide="map-pin" class="input-icon-prefix lucide-sm"></i>
+                    <select id="district-input" name="district" class="form-select-control">
+                        <option value="" selected>-- Semua Kecamatan (Karanganyar) --</option>
+                        <option value="Colomadu">Colomadu</option>
+                        <option value="Gondangrejo">Gondangrejo</option>
+                        <option value="Jaten">Jaten</option>
+                        <option value="Jatipuro">Jatipuro</option>
+                        <option value="Jatiyoso">Jatiyoso</option>
+                        <option value="Jenawi">Jenawi</option>
+                        <option value="Jumantono">Jumantono</option>
+                        <option value="Jumapolo">Jumapolo</option>
+                        <option value="Karanganyar">Karanganyar (Kota)</option>
+                        <option value="Karangpandan">Karangpandan</option>
+                        <option value="Kebakkramat">Kebakkramat</option>
+                        <option value="Kerjo">Kerjo</option>
+                        <option value="Matesih">Matesih</option>
+                        <option value="Mojogedang">Mojogedang</option>
+                        <option value="Ngargoyoso">Ngargoyoso</option>
+                        <option value="Tasikmadu">Tasikmadu</option>
+                        <option value="Tawangmangu">Tawangmangu</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Wilayah / Kabupaten (Khusus Karanganyar) -->
+            <div class="input-field-group">
+                <label class="input-label" for="location-input">
+                    <i data-lucide="building-2" class="lucide-sm"></i>
+                    <span>Kabupaten</span>
+                </label>
+                <div class="input-with-icon">
+                    <i data-lucide="map" class="input-icon-prefix lucide-sm"></i>
+                    <input type="text" id="location-input" name="location" class="form-control" value="Kabupaten Karanganyar" readonly style="background: rgba(15, 23, 42, 0.6); color: #94a3b8; cursor: not-allowed;" title="Khusus Wilayah Kabupaten Karanganyar">
+                </div>
+            </div>
+
+            <!-- Target Data -->
+            <div class="input-field-group">
+                <label class="input-label" for="target-count">
+                    <i data-lucide="hash" class="lucide-sm"></i>
+                    <span>Target Data</span>
+                </label>
+                <select id="target-count" name="target_count" class="form-select-control">
+                    <option value="0" selected>Maksimal / Sebanyak-banyaknya (Sampai Habis)</option>
+                    <option value="150">150 Tempat per Kategori</option>
+                    <option value="80">80 Tempat per Kategori</option>
+                    <option value="40">40 Tempat per Kategori</option>
+                    <option value="20">20 Tempat per Kategori</option>
+                </select>
+            </div>
+
+            <!-- Submit Button -->
+            <button type="submit" class="btn btn-primary" id="start-btn" style="height: 44px;">
+                <i data-lucide="play" class="lucide-sm"></i>
+                <span>Mulai Scraping</span>
+            </button>
+        </div>
+
+        <!-- 30 Quick Category Chips (Lucide Icons) -->
+        <div class="category-chips-header" style="flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                    <i data-lucide="layout-grid" class="lucide-sm"></i>
+                    <span>Pilihan Kategori Bisnis:</span>
+                </span>
+                <span id="selected-count-badge" class="badge-district" style="display: none; font-size: 0.72rem; padding: 2px 7px;">0 Terpilih</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-select-all-cats" style="font-size: 0.76rem; padding: 4px 10px; height: 28px;">
+                    <i data-lucide="layers" class="lucide-sm"></i>
+                    <span>Pilih Semua 30 Kategori (Gabung Sekaligus)</span>
+                </button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-reset-cats" style="font-size: 0.76rem; padding: 4px 10px; height: 28px; display: none;">
+                    <i data-lucide="rotate-ccw" class="lucide-sm"></i>
+                    <span>Reset Pilihan</span>
+                </button>
+            </div>
+        </div>
+        <div class="chips-scroll-container">
+            <button type="button" class="category-chip" data-query="Cafe">
+                <i data-lucide="coffee" class="lucide-sm"></i><span>Cafe</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Restoran">
+                <i data-lucide="utensils" class="lucide-sm"></i><span>Restoran</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Sekolah">
+                <i data-lucide="graduation-cap" class="lucide-sm"></i><span>Sekolah</span>
+            </button>
+            <button type="button" class="category-chip" data-query="UMKM">
+                <i data-lucide="briefcase" class="lucide-sm"></i><span>UMKM</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Kedai">
+                <i data-lucide="cup-soda" class="lucide-sm"></i><span>Kedai</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Hotel">
+                <i data-lucide="hotel" class="lucide-sm"></i><span>Hotel</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Retail">
+                <i data-lucide="shopping-bag" class="lucide-sm"></i><span>Retail</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Konveksi">
+                <i data-lucide="shirt" class="lucide-sm"></i><span>Konveksi</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Pariwisata">
+                <i data-lucide="compass" class="lucide-sm"></i><span>Pariwisata</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Warung">
+                <i data-lucide="store" class="lucide-sm"></i><span>Warung</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Puskesmas & Klinik Kesehatan">
+                <i data-lucide="stethoscope" class="lucide-sm"></i><span>Puskesmas & Klinik</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Bengkel & Otomotif">
+                <i data-lucide="wrench" class="lucide-sm"></i><span>Bengkel & Otomotif</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Salon & Barber Shop">
+                <i data-lucide="scissors" class="lucide-sm"></i><span>Salon & Barber</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Laundry Kiloan">
+                <i data-lucide="sparkles" class="lucide-sm"></i><span>Laundry Kiloan</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Apotek & Toko Obat">
+                <i data-lucide="pill" class="lucide-sm"></i><span>Apotek & Toko Obat</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Ekspedisi & Logistik">
+                <i data-lucide="truck" class="lucide-sm"></i><span>Ekspedisi & Logistik</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Tempat Kursus & Bimbingan Belajar">
+                <i data-lucide="book-open" class="lucide-sm"></i><span>Kursus & Bimbel</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Percetakan & Fotokopi">
+                <i data-lucide="printer" class="lucide-sm"></i><span>Percetakan & Foto</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Spesialis Logam & Bengkel Las">
+                <i data-lucide="hammer" class="lucide-sm"></i><span>Bengkel Las & Logam</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Pet Shop & Perawatan Hewan">
+                <i data-lucide="dog" class="lucide-sm"></i><span>Pet Shop</span>
+            </button>
+            <button type="button" class="category-chip" data-query="SPBU & Pangkalan Gas LPG">
+                <i data-lucide="fuel" class="lucide-sm"></i><span>SPBU & Gas LPG</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Toko Bangunan & Material">
+                <i data-lucide="hard-hat" class="lucide-sm"></i><span>Toko Bangunan</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Fotografer & Studio Foto">
+                <i data-lucide="camera" class="lucide-sm"></i><span>Studio Foto</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Rental Kendaraan (Mobil & Motor)">
+                <i data-lucide="car" class="lucide-sm"></i><span>Rental Kendaraan</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Warteg & Rumah Makan Padang">
+                <i data-lucide="utensils-crossed" class="lucide-sm"></i><span>Warteg & RM Padang</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Penyedia Jasa Konstruksi & Kontraktor">
+                <i data-lucide="construction" class="lucide-sm"></i><span>Jasa Konstruksi</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Toko Buah & Sayur Segar">
+                <i data-lucide="apple" class="lucide-sm"></i><span>Toko Buah & Sayur</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Penyedia Layanan Internet & Komputer">
+                <i data-lucide="monitor" class="lucide-sm"></i><span>Internet & Komputer</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Kantor Notaris & PPAT">
+                <i data-lucide="file-check" class="lucide-sm"></i><span>Notaris & PPAT</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Showroom Jual Beli Kendaraan Bekas">
+                <i data-lucide="car-front" class="lucide-sm"></i><span>Showroom Kendaraan</span>
+            </button>
+        </div>
+
+        <!-- Engine Selector Cards -->
+        <div class="engine-cards-grid">
+            <label class="engine-option-card active" id="card-playwright">
+                <input type="radio" name="engine" value="playwright" checked>
+                <div class="engine-card-text">
+                    <div class="engine-card-title">
+                        <i data-lucide="bot" class="lucide-sm" style="color: #60a5fa;"></i>
+                        <span>Playwright Headless Scraper</span>
+                    </div>
+                    <span class="engine-card-desc">Otomatis mencari langsung di Google Maps tanpa perlu Google Cloud API key.</span>
+                </div>
+            </label>
+
+            <label class="engine-option-card" id="card-places">
+                <input type="radio" name="engine" value="places_api">
+                <div class="engine-card-text">
+                    <div class="engine-card-title">
+                        <i data-lucide="zap" class="lucide-sm" style="color: #fbbf24;"></i>
+                        <span>Google Places API (New) Resmi</span>
+                    </div>
+                    <span class="engine-card-desc">Ekstraksi instan menggunakan REST API resmi Google Places (membutuhkan API key).</span>
+                </div>
+            </label>
+        </div>
+
+        <div id="api-key-container">
+            <div class="input-field-group" style="max-width: 500px; margin-top: 14px;">
+                <label class="input-label" for="api-key-input">
+                    <i data-lucide="key" class="lucide-sm"></i>
+                    <span>Google Maps API Key</span>
+                </label>
+                <input type="text" id="api-key-input" name="api_key" class="form-control" placeholder="Masukkan Google Maps API Key Anda">
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Sesi Scraping Terakhir -->
+{% if recent_jobs %}
+<div class="glass-card" style="padding: 16px 24px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+        <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600; display: flex; align-items: center; gap: 6px;">
+            <i data-lucide="clock" class="lucide-sm"></i>
+            <span>Riwayat Sesi Scraping:</span>
+        </span>
+        <span style="font-size: 0.78rem; color: var(--text-dim);">Klik sesi untuk melihat data spesifik</span>
+    </div>
+    <div class="sessions-bar">
+        {% for job in recent_jobs %}
+            <a href="{% url 'job_detail' job.id %}" class="session-chip">
+                <span class="badge-status {% if job.status == 'completed' %}completed{% elif job.status == 'running' %}running{% elif job.status == 'cancelled' %}cancelled{% elif job.status == 'failed' %}failed{% else %}completed{% endif %}">
+                    {% if job.status == 'completed' %}
+                        <i data-lucide="check" class="lucide-sm"></i>
+                    {% elif job.status == 'running' %}
+                        <i data-lucide="loader" class="lucide-sm" style="animation: spin 1s linear infinite;"></i>
+                    {% elif job.status == 'cancelled' %}
+                        <i data-lucide="circle-slash" class="lucide-sm"></i>
+                    {% else %}
+                        <i data-lucide="alert-circle" class="lucide-sm"></i>
+                    {% endif %}
+                    <span>{{ job.get_status_display }}</span>
+                </span>
+                <strong style="color: #fff;">{{ job.query }}</strong>
+                {% if job.district %}
+                    <span class="badge-district">{{ job.district }}</span>
+                {% endif %}
+                <span style="color: var(--text-dim);">({{ job.total_scraped }} data)</span>
+            </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Data Table Card -->
+<div class="glass-card">
+    <div class="table-toolbar">
+        <form method="GET" action="{% url 'dashboard' %}" class="table-filter-form">
+            <div class="input-with-icon" style="flex: 1;">
+                <i data-lucide="search" class="input-icon-prefix lucide-sm"></i>
+                <input type="text" name="q" value="{{ search_q }}" class="form-control" placeholder="Cari nama tempat, kecamatan di Karanganyar, alamat..." style="padding-top: 8px; padding-bottom: 8px; font-size: 0.85rem;">
+            </div>
+            <select name="sort" class="form-select-control" onchange="this.form.submit()" style="max-width: 170px; padding: 8px 12px; font-size: 0.85rem;">
+                <option value="newest" {% if sort_by == 'newest' %}selected{% endif %}>Terbaru</option>
+                <option value="rating_desc" {% if sort_by == 'rating_desc' %}selected{% endif %}>Rating Tertinggi</option>
+                <option value="reviews_desc" {% if sort_by == 'reviews_desc' %}selected{% endif %}>Ulasan Terbanyak</option>
+                <option value="name_asc" {% if sort_by == 'name_asc' %}selected{% endif %}>Nama (A-Z)</option>
+            </select>
+            <button type="submit" class="btn btn-secondary btn-sm">
+                <i data-lucide="filter" class="lucide-sm"></i>
+                <span>Filter</span>
+            </button>
+            {% if search_q or sort_by != '-created_at' %}
+                <a href="{% url 'dashboard' %}" class="btn btn-ghost btn-sm">
+                    <i data-lucide="rotate-ccw" class="lucide-sm"></i>
+                    <span>Reset</span>
+                </a>
+            {% endif %}
+        </form>
+
+        <div class="table-actions">
+            {% if total_places > 0 %}
+            <button type="button" class="btn btn-danger-soft btn-sm" onclick="openClearAllModal()" title="Hapus seluruh data tempat agar database bersih dan tidak ada duplikat">
+                <i data-lucide="trash-2" class="lucide-sm"></i>
+                <span>Hapus Semua</span>
+            </button>
+            {% endif %}
+            <a href="{% url 'export_excel' %}{% if search_q %}?q={{ search_q }}{% endif %}" class="btn btn-success btn-sm">
+                <i data-lucide="file-spreadsheet" class="lucide-sm"></i>
+                <span>Export Excel (.xlsx)</span>
+            </a>
+            <a href="{% url 'export_csv' %}{% if search_q %}?q={{ search_q }}{% endif %}" class="btn btn-secondary btn-sm">
+                <i data-lucide="file-text" class="lucide-sm"></i>
+                <span>Export CSV (.csv)</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="table-responsive">
+        <table class="pro-table">
+            <thead>
+                <tr>
+                    <th style="width: 45px; text-align: center;">No</th>
+                    <th>Nama Tempat</th>
+                    <th>Kategori</th>
+                    <th>Kecamatan</th>
+                    <th style="text-align: center;">Rating & Ulasan</th>
+                    <th>Alamat</th>
+                    <th>Telepon</th>
+                    <th style="text-align: center;">Aksi</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for place in page_obj %}
+                <tr>
+                    <td style="text-align: center; color: var(--text-dim); font-size: 0.8rem;">
+                        {{ forloop.counter0|add:page_obj.start_index }}
+                    </td>
+                    <td>
+                        <strong style="color: #fff; font-size: 0.92rem;">{{ place.name }}</strong>
+                        {% if place.website %}
+                            <div style="margin-top: 2px;">
+                                <a href="{{ place.website }}" target="_blank" rel="noopener noreferrer" style="color: #60a5fa; font-size: 0.76rem; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                                    <i data-lucide="globe" class="lucide-sm"></i>
+                                    <span>Website</span>
+                                </a>
+                            </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if place.category %}
+                            <span class="badge-category">{{ place.category }}</span>
+                        {% else %}
+                            <span style="color: var(--text-dim); font-size: 0.8rem;">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if place.district %}
+                            <span class="badge-district">{{ place.district }}</span>
+                        {% else %}
+                            <span style="color: var(--text-dim); font-size: 0.8rem;">-</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: center;">
+                        {% if place.rating %}
+                            <div class="rating-badge" style="justify-content: center;">
+                                <i data-lucide="star" style="width: 14px; height: 14px; fill: #fbbf24; color: #fbbf24;"></i>
+                                <span>{{ place.rating }}</span>
+                            </div>
+                            <div style="font-size: 0.72rem; color: var(--text-dim); margin-top: 2px;">
+                                ({{ place.reviews_count }} ulasan)
+                            </div>
+                        {% else %}
+                            <span style="color: var(--text-dim); font-size: 0.78rem;">Belum ada rating</span>
+                        {% endif %}
+                    </td>
+                    <td style="max-width: 280px; font-size: 0.82rem; color: var(--text-muted);">
+                        {{ place.address|default:"-" }}
+                    </td>
+                    <td style="white-space: nowrap; font-size: 0.82rem; color: var(--text-muted);">
+                        {% if place.phone %}
+                            <span style="display: inline-flex; align-items: center; gap: 4px;">
+                                <i data-lucide="phone" class="lucide-sm" style="color: var(--text-dim);"></i>
+                                <span>{{ place.phone }}</span>
+                            </span>
+                        {% else %}
+                            <span style="color: var(--text-dim);">-</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: center; white-space: nowrap;">
+                        {% if place.google_maps_url %}
+                            <a href="{{ place.google_maps_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="padding: 4px 8px; font-size: 0.76rem;" title="Buka di Google Maps">
+                                <i data-lucide="external-link" class="lucide-sm"></i>
+                                <span>Maps</span>
+                            </a>
+                        {% endif %}
+                        <button type="button" class="btn btn-ghost btn-sm" style="padding: 4px 8px; font-size: 0.76rem;" onclick="copyPlaceInfo('{{ place.name|escapejs }}', '{{ place.address|escapejs }}', '{{ place.phone|escapejs }}')" title="Salin Data">
+                            <i data-lucide="copy" class="lucide-sm"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="8" style="text-align: center; padding: 48px 20px; color: var(--text-dim);">
+                        <div style="width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,0.04); display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; color: var(--text-muted);">
+                            <i data-lucide="inbox" class="lucide-lg"></i>
+                        </div>
+                        <h4 style="color: var(--text-muted); margin-bottom: 4px; font-size: 0.95rem;">Belum Ada Data Tempat</h4>
+                        <p style="font-size: 0.82rem;">Mulai scraping tempat di atas untuk mengumpulkan data bisnis baru.</p>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <div class="pagination">
+        {% if page_obj.has_previous %}
+            <a href="?page={{ page_obj.previous_page_number }}{% if search_q %}&q={{ search_q }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}" class="page-btn">
+                <i data-lucide="chevron-left" class="lucide-sm"></i>
+            </a>
+        {% endif %}
+
+        {% for p in page_obj.paginator.page_range %}
+            {% if page_obj.number == p %}
+                <span class="page-btn active">{{ p }}</span>
+            {% elif p > page_obj.number|add:'-3' and p < page_obj.number|add:'3' %}
+                <a href="?page={{ p }}{% if search_q %}&q={{ search_q }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}" class="page-btn">{{ p }}</a>
+            {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+            <a href="?page={{ page_obj.next_page_number }}{% if search_q %}&q={{ search_q }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}" class="page-btn">
+                <i data-lucide="chevron-right" class="lucide-sm"></i>
+            </a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Modal Live Scraping Monitor (Lucide Icons) -->
+<div id="scrape-modal" class="modal-overlay">
+    <div class="modal-window">
+        <div class="pulse-radar">
+            <i data-lucide="radar" style="width: 32px; height: 32px; animation: spin 4s linear infinite;"></i>
+        </div>
+        <h2 style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 6px;">Sedang Mengumpulkan Data</h2>
+        <p id="progress-status" style="color: var(--text-muted); font-size: 0.88rem;">Menginisialisasi engine scraping...</p>
+
+        <div class="progress-track">
+            <div id="progress-fill" class="progress-bar"></div>
+        </div>
+
+        <div style="font-size: 1.15rem; font-weight: 800; color: #fff; margin-bottom: 24px; letter-spacing: -0.02em;">
+            <span id="progress-count" style="color: #60a5fa;">0</span> / <span id="progress-target">40</span> Tempat
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap;">
+            <button type="button" id="modal-stop-btn" class="btn btn-danger-soft btn-sm" style="display: inline-flex;">
+                <i data-lucide="circle-stop" class="lucide-sm"></i>
+                <span>Hentikan Scraping</span>
+            </button>
+            <button type="button" id="modal-close-btn" class="btn btn-secondary btn-sm" style="display: none;">
+                <i data-lucide="x" class="lucide-sm"></i>
+                <span>Tutup Window</span>
+            </button>
+            <a id="modal-view-job-btn" href="#" class="btn btn-primary btn-sm" style="display: none;">
+                <i data-lucide="external-link" class="lucide-sm"></i>
+                <span>Lihat Hasil Data</span>
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Konfirmasi Hapus Data & Bersihkan Duplikat (Lucide Icons) -->
+<div id="clear-all-modal" class="modal-overlay">
+    <div class="modal-window" style="max-width: 480px; text-align: center;">
+        <div style="width: 60px; height: 60px; border-radius: 50%; background: rgba(239, 68, 68, 0.12); border: 2px solid rgba(239, 68, 68, 0.35); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; color: #f87171;">
+            <i data-lucide="trash-2" style="width: 28px; height: 28px;"></i>
+        </div>
+        <h2 style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 8px;">Hapus Data & Bersihkan Database</h2>
+        <p style="color: var(--text-muted); font-size: 0.88rem; line-height: 1.5; margin-bottom: 22px;">
+            Terdapat <strong style="color: #60a5fa;">{{ total_places }} data tempat</strong> tersimpan di database. Pilih opsi penghapusan berikut agar tidak terjadi penumpukan atau duplikasi data:
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px;">
+            <!-- Opsi 1: Kosongkan Seluruh Database -->
+            <form method="POST" action="{% url 'clear_all_data' %}">
+                {% csrf_token %}
+                <input type="hidden" name="scope" value="all">
+                <button type="submit" class="btn btn-danger" style="width: 100%; justify-content: center; height: 44px; font-weight: 600;">
+                    <i data-lucide="trash-2" class="lucide-sm"></i>
+                    <span>Kosongkan Seluruh Data (Reset Bersih)</span>
+                </button>
+            </form>
+
+            <!-- Opsi 2: Bersihkan Data Duplikat Saja -->
+            <form method="POST" action="{% url 'clear_all_data' %}">
+                {% csrf_token %}
+                <input type="hidden" name="scope" value="duplicates_only">
+                <button type="submit" class="btn btn-secondary" style="width: 100%; justify-content: center; height: 44px; font-weight: 600;">
+                    <i data-lucide="copy-slash" class="lucide-sm"></i>
+                    <span>Hanya Hapus Duplikat (Simpan Data Unik)</span>
+                </button>
+            </form>
+        </div>
+
+        <button type="button" class="btn btn-ghost btn-sm" onclick="closeClearAllModal()" style="width: 100%; justify-content: center;">
+            <i data-lucide="x" class="lucide-sm"></i>
+            <span>Batal</span>
+        </button>
+    </div>
+</div>
+{% endblock %}
