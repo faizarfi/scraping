@@ -380,7 +380,7 @@
         <form method="GET" action="{% url 'dashboard' %}" class="table-filter-form">
             <div class="input-with-icon" style="flex: 1;">
                 <i data-lucide="search" class="input-icon-prefix lucide-sm"></i>
-                <input type="text" name="q" value="{{ search_q }}" class="form-control" placeholder="Cari nama tempat, kecamatan di Karanganyar, alamat..." style="padding-top: 8px; padding-bottom: 8px; font-size: 0.85rem;">
+                <input type="text" name="q" value="{{ search_q }}" class="form-control" placeholder="Cari nama tempat, kategori, kecamatan, alamat..." style="padding-top: 8px; padding-bottom: 8px; font-size: 0.85rem;">
             </div>
             <select name="sort" class="form-select-control" onchange="this.form.submit()" style="max-width: 170px; padding: 8px 12px; font-size: 0.85rem;">
                 <option value="newest" {% if sort_by == 'newest' %}selected{% endif %}>Terbaru</option>
@@ -407,11 +407,11 @@
                 <span>Hapus Semua</span>
             </button>
             {% endif %}
-            <a href="{% url 'export_excel' %}{% if search_q %}?q={{ search_q }}{% endif %}" class="btn btn-success btn-sm">
+            <a href="{% url 'export_excel' %}?{% if search_q %}q={{ search_q }}&{% endif %}{% if category_filter %}category={{ category_filter }}{% endif %}" class="btn btn-success btn-sm">
                 <i data-lucide="file-spreadsheet" class="lucide-sm"></i>
                 <span>Export Excel (.xlsx)</span>
             </a>
-            <a href="{% url 'export_csv' %}{% if search_q %}?q={{ search_q }}{% endif %}" class="btn btn-secondary btn-sm">
+            <a href="{% url 'export_csv' %}?{% if search_q %}q={{ search_q }}&{% endif %}{% if category_filter %}category={{ category_filter }}{% endif %}" class="btn btn-secondary btn-sm">
                 <i data-lucide="file-text" class="lucide-sm"></i>
                 <span>Export CSV (.csv)</span>
             </a>
@@ -451,8 +451,8 @@
                         {% endif %}
                     </td>
                     <td>
-                        {% if place.category %}
-                            <span class="badge-category">{{ place.category }}</span>
+                        {% if place.display_category %}
+                            <span class="badge-category">{{ place.display_category }}</span>
                         {% else %}
                             <span style="color: var(--text-dim); font-size: 0.8rem;">-</span>
                         {% endif %}
@@ -478,14 +478,24 @@
                         {% endif %}
                     </td>
                     <td style="max-width: 280px; font-size: 0.82rem; color: var(--text-muted);">
-                        {{ place.address|default:"-" }}
+                        {{ place.display_address|default:"-" }}
                     </td>
                     <td style="white-space: nowrap; font-size: 0.82rem; color: var(--text-muted);">
                         {% if place.phone %}
-                            <span style="display: inline-flex; align-items: center; gap: 4px;">
-                                <i data-lucide="phone" class="lucide-sm" style="color: var(--text-dim);"></i>
-                                <span>{{ place.phone }}</span>
-                            </span>
+                            <div>
+                                <span style="display: inline-flex; align-items: center; gap: 4px;">
+                                    <i data-lucide="phone" class="lucide-sm" style="color: var(--text-dim);"></i>
+                                    <span>{{ place.phone }}</span>
+                                </span>
+                            </div>
+                            {% if place.clean_wa_phone %}
+                                <div style="margin-top: 3px;">
+                                    <a href="https://wa.me/{{ place.clean_wa_phone }}" target="_blank" rel="noopener noreferrer" style="color: #22c55e; font-size: 0.74rem; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; font-weight: 500;" title="Chat via WhatsApp">
+                                        <i data-lucide="message-circle" class="lucide-sm" style="width: 12px; height: 12px;"></i>
+                                        <span>Chat WhatsApp</span>
+                                    </a>
+                                </div>
+                            {% endif %}
                         {% else %}
                             <span style="color: var(--text-dim);">-</span>
                         {% endif %}

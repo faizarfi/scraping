@@ -160,20 +160,36 @@ def export_excel(request):
     """
     job_id = request.GET.get('job_id')
     search_q = request.GET.get('q', '').strip()
+    category_filter = request.GET.get('category', '').strip()
 
     if job_id:
         job = get_object_or_404(ScrapeJob, id=job_id)
-        places = job.places.all().order_by('-created_at')
+        places = job.places.all()
         safe_q = re.sub(r'[^\w\-]', '_', job.query[:25]).strip('_') or 'data'
         filename = f"google_maps_job_{job.id}_{safe_q}.xlsx"
     else:
         places = Place.objects.all()
-        if search_q:
-            places = places.filter(name__icontains=search_q) | places.filter(address__icontains=search_q)
-        places = places.order_by('-created_at')
+        safe_q = re.sub(r'[^\w\-]', '_', search_q[:20]).strip('_') if search_q else 'semua_data'
         timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"google_maps_semua_data_{timestamp}.xlsx"
+        filename = f"google_maps_{safe_q}_{timestamp}.xlsx"
 
+    if search_q:
+        places = places.filter(
+            name__icontains=search_q
+        ) | places.filter(
+            address__icontains=search_q
+        ) | places.filter(
+            category__icontains=search_q
+        ) | places.filter(
+            district__icontains=search_q
+        ) | places.filter(
+            search_query__icontains=search_q
+        )
+
+    if category_filter:
+        places = places.filter(category__icontains=category_filter)
+
+    places = places.order_by('-created_at')
     excel_bytes = generate_excel_bytes(places)
     response = HttpResponse(
         excel_bytes,
@@ -189,20 +205,36 @@ def export_csv(request):
     """
     job_id = request.GET.get('job_id')
     search_q = request.GET.get('q', '').strip()
+    category_filter = request.GET.get('category', '').strip()
 
     if job_id:
         job = get_object_or_404(ScrapeJob, id=job_id)
-        places = job.places.all().order_by('-created_at')
+        places = job.places.all()
         safe_q = re.sub(r'[^\w\-]', '_', job.query[:25]).strip('_') or 'data'
         filename = f"google_maps_job_{job.id}_{safe_q}.csv"
     else:
         places = Place.objects.all()
-        if search_q:
-            places = places.filter(name__icontains=search_q) | places.filter(address__icontains=search_q)
-        places = places.order_by('-created_at')
+        safe_q = re.sub(r'[^\w\-]', '_', search_q[:20]).strip('_') if search_q else 'semua_data'
         timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"google_maps_semua_data_{timestamp}.csv"
+        filename = f"google_maps_{safe_q}_{timestamp}.csv"
 
+    if search_q:
+        places = places.filter(
+            name__icontains=search_q
+        ) | places.filter(
+            address__icontains=search_q
+        ) | places.filter(
+            category__icontains=search_q
+        ) | places.filter(
+            district__icontains=search_q
+        ) | places.filter(
+            search_query__icontains=search_q
+        )
+
+    if category_filter:
+        places = places.filter(category__icontains=category_filter)
+
+    places = places.order_by('-created_at')
     csv_bytes = generate_csv_bytes(places)
     response = HttpResponse(csv_bytes, content_type='text/csv; charset=utf-8-sig')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'

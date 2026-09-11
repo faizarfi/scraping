@@ -118,41 +118,195 @@ def parse_coordinates_from_url(url):
             pass
     return None, None
 
-def parse_category_and_address(lines):
+OPERATIONAL_KEYWORDS = {
+    'buka', 'tutup', 'open', 'closed', 'buka 24 jam', 'open 24 hours',
+    'buka sekarang', 'open now', 'tutup sementara', 'temporarily closed',
+    'tutup permanen', 'permanently closed', 'buka segera', 'akan segera buka',
+    'dine-in', 'takeaway', 'delivery', 'makan di tempat', 'bawa pulang',
+    'pesan antar', 'drive-through', 'antar tanpa bertemu', 'no-contact delivery'
+}
+
+
+def is_operational_or_status(text):
     """
-    Cari baris yang memuat kategori dan alamat (biasanya dipisahkan dengan tanda titik tengah ·)
+    Periksa apakah suatu teks adalah status jam operasional Google Maps (Buka/Tutup/dsb)
+    """
+    if not text:
+        return True
+    t = text.strip().lower()
+    if t in OPERATIONAL_KEYWORDS:
+        return True
+    if re.search(r'^(buka|tutup|open|closed)\b', t):
+        return True
+    if any(k in t for k in ['tutup pukul', 'buka pukul', 'buka 24 jam', 'closes at', 'opens at', 'closes soon', 'opens soon']):
+        return True
+    if re.search(r'\b(pukul|\bpm\b|\bam\b)\s*\d', t):
+        return True
+    return False
+
+
+def is_rating_review_text(text):
+    """
+    Periksa apakah teks hanya memuat angka rating atau jumlah ulasan
+    """
+    if not text:
+        return False
+    t = text.strip()
+    if re.search(r'^[1-5][,\.]\d\s*(?:\([0-9\.\,]+\))?$', t):
+        return True
+    if re.search(r'^\([0-9\.\,]+\)$', t):
+        return True
+    return False
+
+
+def is_likely_address(text):
+    """
+    Evaluasi apakah teks adalah alamat fisik valid
+    """
+    if not text or is_operational_or_status(text):
+        return False
+    t = text.strip().lower()
+    if any(k in t for k in ['jl.', 'jalan', 'raya', 'no.', 'rt.', 'rw.', 'gang', 'gg.', 'kelurahan', 'kecamatan', 'kabupaten', 'kota', 'komplek', 'blok']):
+        return True
+    if any(char.isdigit() for char in t) and len(t) >= 12:
+        return True
+    return False
+
+
+def parse_category_and_address(lines, place_name=""):
+    """
+    Ekstrak kategori dan alamat dari teks kartu Google Maps secara akurat,
+    dengan menyaring teks status jam operasional ('Buka', 'Tutup pukul...', dsb)
+    serta mengabaikan baris nama tempat agar tidak terdeteksi sebagai kategori.
     """
     category = ""
     address = ""
-    
+
+    clean_lines = []
+    p_name_lower = (place_name or "").strip().lower()
+
     for line in lines:
         cleaned = line.strip()
+        if not cleaned:
+            continue
+        # Lewati jika baris murni status jam operasional (misal "Buka · Tutup pukul 21.00")
+        if is_operational_or_status(cleaned):
+            continue
+        # Lewati jika baris adalah nama tempat itu sendiri
+        if p_name_lower and cleaned.lower() == p_name_lower:
+            continue
+        clean_lines.append(cleaned)
+
+    for cleaned in clean_lines:
         # Periksa apakah ada pemisah · atau •
         if '·' in cleaned or '•' in cleaned:
             parts = [p.strip() for p in re.split(r'[·•]', cleaned) if p.strip()]
-            if parts:
-                # Bagian pertama biasanya kategori (Restoran, Kafe, Kedai Kopi, Toko, dll.)
-                first = parts[0]
-                if len(first) < 40 and not any(char.isdigit() for char in first[:5]):
-                    category = first
-                # Cari bagian yang mengandung kata jalan / alamat atau paling panjang
-                for p in parts[1:]:
-                    if any(k in p.lower() for k in ['jl.', 'jalan', 'rt.', 'rw.', 'no.', 'kelurahan', 'kecamatan', 'kabupaten', 'kota']) or len(p) > 15:
-                        address = p
-                        break
-                if not address and len(parts) > 1:
-                    address = parts[-1]
-                if category and address:
-                    return category, address
+            valid_parts = [p for p in parts if not is_operational_or_status(p)]
 
-    # Fallback: jika tidak ada pemisah ·
-    for line in lines:
-        cleaned = line.strip()
-        if any(k in cleaned.lower() for k in ['jl.', 'jalan', 'raya', 'no.', 'rt.', 'rw.']):
-            address = cleaned
+            for p in valid_parts:
+                if is_rating_review_text(p):
+                    continue
+                if is_likely_address(p):
+                    if not address:
+                        address = p
+                    continue
+                if not category and len(p) <= 40 and not any(char.isdigit() for char in p[:4]):
+                    category = p
+        else:
+            if is_likely_address(cleaned):
+                if not address:
+                    address = cleaned
+            elif not category and not is_rating_review_text(cleaned) and len(cleaned) <= 40 and not any(char.isdigit() for char in cleaned[:4]):
+                category = cleaned
+
+        if category and address:
             break
 
+    # Fallback jika alamat belum ditemukan
+    if not address:
+        for cleaned in clean_lines:
+            if is_operational_or_status(cleaned) or is_rating_review_text(cleaned):
+                continue
+            if is_likely_address(cleaned):
+                address = cleaned
+                break
+
+    if is_operational_or_status(category):
+        category = ""
+
+    if is_operational_or_status(address):
+        address = ""
+
     return category, address
+
+
+def parse_phone_and_website(parent, lines):
+    """
+    Ekstrak nomor telepon dan URL website dari elemen kartu Google Maps
+    """
+    phone = ""
+    website = ""
+
+    for line in lines:
+        cleaned = line.strip()
+        # Pola nomor telepon Indonesia: 08xx, +62xx, (02xx), dsb.
+        m = re.search(r'((?:\+62|62|08|\(0\d{2,4}\)|0\d{2,4})[\d\s\-\(\)]{6,18}\d)', cleaned)
+        if m:
+            candidate = re.sub(r'[^\d+]', '', m.group(1))
+            if 8 <= len(candidate) <= 16:
+                phone = m.group(1).strip()
+                break
+
+    try:
+        web_link = parent.locator("a[data-value*='Website'], a[aria-label*='Situs'], a[aria-label*='Website'], a[href*='google.com/url']").first
+        if web_link.count() > 0:
+            href = web_link.get_attribute("href") or ""
+            if "google.com/url?" in href:
+                parsed = urllib.parse.urlparse(href)
+                qs = urllib.parse.parse_qs(parsed.query)
+                target = qs.get('q', [''])[0]
+                if target.startswith('http'):
+                    website = target
+            elif href.startswith("http") and "google.com" not in href:
+                website = href
+    except Exception:
+        pass
+
+    return phone, website
+
+
+def resolve_district_from_text(address_text, query_text="", preset_district=""):
+    """
+    Deteksi nama kecamatan secara cerdas & universal untuk kota manapun di Indonesia:
+    1. Preset jika dipilih secara spesifik oleh pengguna
+    2. Ekstraksi otomatis dari teks alamat menggunakan pola regex 'Kecamatan X' atau 'Kec. X'
+    3. Ekstraksi dari daftar kecamatan yang dikenal
+    """
+    if preset_district and preset_district.strip():
+        return preset_district.strip()
+
+    combined = f"{address_text or ''} {query_text or ''}"
+
+    # Deteksi regex umum: "Kecamatan Sukajadi", "Kec. Tebet", "Kecamatan Senen", dll.
+    m = re.search(r'Kec(?:amatan|\.)\s+([A-Za-z0-9\s]+?)(?:,|$|\.|\d|\-)', combined, re.IGNORECASE)
+    if m:
+        name = m.group(1).strip()
+        if 3 <= len(name) <= 30:
+            return name.title()
+
+    # Cek daftar kecamatan spesifik jika cocok
+    known_districts = [
+        'Colomadu', 'Gondangrejo', 'Jaten', 'Jatipuro', 'Jatiyoso', 
+        'Jenawi', 'Jumantono', 'Jumapolo', 'Karanganyar', 'Karangpandan', 
+        'Kebakkramat', 'Kerjo', 'Matesih', 'Mojogedang', 'Ngargoyoso', 
+        'Tasikmadu', 'Tawangmangu', 'Tebet', 'Kebayoran Baru', 'Kebayoran Lama',
+        'Cilandak', 'Setiabudi', 'Mampang Prapatan', 'Pancoran', 'Pasar Minggu'
+    ]
+    for d in known_districts:
+        if d.lower() in combined.lower():
+            return d
+
+    return "-"
 
 
 def check_is_duplicate(name, lat, lng, address=None):
@@ -186,6 +340,10 @@ def check_is_duplicate(name, lat, lng, address=None):
                 return True
         return False
 
+    # Jika koordinat dan alamat keduanya tidak terbaca: cek apakah nama persis sudah ada
+    if Place.objects.filter(name__iexact=name_clean).exists():
+        return True
+
     return False
 
 
@@ -215,17 +373,224 @@ def build_full_query(job):
         return f"{parts[0]} di {parts[1]}, {parts[2]}"
 
 
+def scrape_single_category(worker_id, page, cat_name, cat_idx, total_cats, job_id, is_unlimited, per_category_target, max_scroll_attempts, shared_stats, db_lock):
+    """
+    Eksekusi scraping untuk 1 kategori spesifik di dalam worker tab tertentu
+    """
+    from .models import ScrapeJob, Place
+
+    job = ScrapeJob.objects.filter(id=job_id).first()
+    if not job or is_job_cancelled(job_id):
+        return
+
+    parts = [cat_name]
+    if job.district:
+        if not job.district.lower().startswith('kecamatan'):
+            parts.append(f"Kecamatan {job.district}")
+        else:
+            parts.append(job.district)
+    if job.location:
+        parts.append(job.location)
+
+    if len(parts) == 1:
+        item_full_query = parts[0]
+    elif len(parts) == 2:
+        item_full_query = f"{parts[0]} di {parts[1]}"
+    else:
+        item_full_query = f"{parts[0]} di {parts[1]}, {parts[2]}"
+
+    logger.info(f"[Tab-{worker_id}] [{cat_idx}/{total_cats}] Scraping: '{item_full_query}' (Target: {'Maksimal' if is_unlimited else per_category_target})")
+    encoded_query = urllib.parse.quote_plus(item_full_query)
+    search_url = f"https://www.google.com/maps/search/{encoded_query}/"
+
+    try:
+        page.goto(search_url, timeout=35000, wait_until="domcontentloaded")
+        page.wait_for_timeout(2500)
+    except Exception as nav_err:
+        logger.warning(f"[Tab-{worker_id}] Navigasi timeout untuk '{item_full_query}': {nav_err}")
+        return
+
+    # Tangani dialog consent / cookie Google jika muncul
+    try:
+        consent_btn = page.locator("button:has-text('Accept all'), button:has-text('Setuju semua'), button:has-text('Tolak semua'), form[action*='consent'] button").first
+        if consent_btn.count() > 0 and consent_btn.is_visible():
+            consent_btn.click()
+            page.wait_for_timeout(1500)
+    except Exception:
+        pass
+
+    scroll_count = 0
+    prev_len = 0
+    consecutive_same_len = 0
+
+    while scroll_count < max_scroll_attempts:
+        if is_job_cancelled(job_id):
+            return
+
+        page.mouse.move(250, 350)
+        page.mouse.wheel(0, 3500)
+        page.wait_for_timeout(1600)
+        scroll_count += 1
+
+        links = page.locator("div[role='feed'] a[href*='/maps/place/']").all()
+        curr_len = len(links)
+        if not is_unlimited and curr_len >= per_category_target:
+            break
+
+        if curr_len == prev_len:
+            consecutive_same_len += 1
+            if consecutive_same_len >= 3:
+                break
+        else:
+            consecutive_same_len = 0
+        prev_len = curr_len
+
+        end_text = page.locator("text='Anda telah mencapai akhir daftar', text=\"You've reached the end of the list\"")
+        if end_text.count() > 0:
+            break
+
+    if is_job_cancelled(job_id):
+        return
+
+    links = page.locator("div[role='feed'] a[href*='/maps/place/']").all()
+
+    # Fallback jika Google Maps langsung membuka halaman detail 1 tempat (exact match)
+    if not links and "/maps/place/" in page.url:
+        try:
+            h1_el = page.locator("h1").first
+            if h1_el.count() > 0:
+                s_name = h1_el.inner_text().strip()
+                if s_name:
+                    s_href = page.url
+                    s_lat, s_lng = parse_coordinates_from_url(s_href)
+                    main_panel = page.locator("div[role='main']").first
+                    panel_text = main_panel.inner_text() if main_panel.count() > 0 else page.inner_text()
+                    panel_lines = [l.strip() for l in panel_text.split("\n") if l.strip()]
+
+                    s_rating, s_reviews = parse_rating_reviews(main_panel, panel_lines)
+                    s_category, s_address = parse_category_and_address(panel_lines, place_name=s_name)
+                    s_phone, s_website = parse_phone_and_website(main_panel, panel_lines)
+                    s_district = resolve_district_from_text(s_address, item_full_query, job.district)
+
+                    s_clean_name = s_name.strip().lower()
+                    if s_lat is not None and s_lng is not None:
+                        s_key = (s_clean_name, round(s_lat, 4), round(s_lng, 4))
+                    else:
+                        s_key = (s_clean_name, (s_address or '').strip().lower())
+
+                    with db_lock:
+                        if s_href not in shared_stats['seen_urls'] and s_key not in shared_stats['seen_places']:
+                            if not check_is_duplicate(s_name, s_lat, s_lng, s_address):
+                                shared_stats['seen_urls'].add(s_href)
+                                shared_stats['seen_places'].add(s_key)
+                                final_cat = s_category.strip() if s_category and not is_operational_or_status(s_category) else cat_name
+                                final_addr = s_address.strip() if s_address and not is_operational_or_status(s_address) else ""
+                                Place.objects.create(
+                                    job_id=job_id,
+                                    name=s_name,
+                                    category=final_cat,
+                                    district=s_district,
+                                    address=final_addr,
+                                    phone=s_phone,
+                                    website=s_website,
+                                    rating=s_rating,
+                                    reviews_count=s_reviews,
+                                    google_maps_url=s_href,
+                                    latitude=s_lat,
+                                    longitude=s_lng,
+                                    search_query=item_full_query
+                                )
+                                shared_stats['scraped_count'] += 1
+                                ScrapeJob.objects.filter(id=job_id).update(total_scraped=shared_stats['scraped_count'])
+        except Exception as single_err:
+            logger.warning(f"[Tab-{worker_id}] Gagal ekstrak tempat tunggal: {single_err}")
+
+    cat_scraped = 0
+    for item in links:
+        if is_job_cancelled(job_id):
+            return
+        if not is_unlimited and cat_scraped >= per_category_target:
+            break
+
+        href = item.get_attribute("href") or ""
+        if not href:
+            continue
+
+        name = item.get_attribute("aria-label") or ""
+        if not name:
+            name = item.inner_text().split("\n")[0].strip()
+        # Lewati thumbnail foto atau label navigasi
+        if not name or name.lower().startswith('foto ') or name.lower().startswith('photo '):
+            continue
+
+        with db_lock:
+            if href in shared_stats['seen_urls']:
+                continue
+            shared_stats['seen_urls'].add(href)
+
+        parent = item.locator("xpath=..")
+        parent_lines = [l.strip() for l in parent.inner_text().split("\n") if l.strip()]
+
+        rating, reviews = parse_rating_reviews(parent, parent_lines)
+        category, address = parse_category_and_address(parent_lines, place_name=name)
+        phone, website = parse_phone_and_website(parent, parent_lines)
+        lat, lng = parse_coordinates_from_url(href)
+
+        district_name = resolve_district_from_text(address, item_full_query, job.district)
+
+        name_clean = name.strip().lower()
+        if lat is not None and lng is not None:
+            place_key = (name_clean, round(lat, 4), round(lng, 4))
+        else:
+            place_key = (name_clean, (address or '').strip().lower())
+
+        with db_lock:
+            if place_key in shared_stats['seen_places']:
+                continue
+            if check_is_duplicate(name, lat, lng, address):
+                continue
+
+            shared_stats['seen_places'].add(place_key)
+
+            final_category = category.strip() if category and not is_operational_or_status(category) else cat_name
+            final_address = address.strip() if address and not is_operational_or_status(address) else ""
+
+            Place.objects.create(
+                job_id=job_id,
+                name=name,
+                category=final_category,
+                district=district_name,
+                address=final_address,
+                phone=phone,
+                website=website,
+                rating=rating,
+                reviews_count=reviews,
+                google_maps_url=href,
+                latitude=lat,
+                longitude=lng,
+                search_query=item_full_query
+            )
+            shared_stats['scraped_count'] += 1
+            cat_scraped += 1
+
+            if shared_stats['scraped_count'] % 2 == 0:
+                ScrapeJob.objects.filter(id=job_id).update(total_scraped=shared_stats['scraped_count'])
+
+
 def run_playwright_scraper(job_id, target_count=30):
     """
-    Fungsi worker Playwright untuk scraping data Google Maps
+    Worker Playwright Multi-Tab Paralel:
+    Membagi daftar kategori ke dalam antrean (Queue) yang dikerjakan secara simultan
+    oleh 2-3 worker tab paralel, meningkatkan kecepatan scraping hingga 3x lipat.
     """
+    import queue
     from playwright.sync_api import sync_playwright
-    
+
     close_old_connections()
     try:
         job = ScrapeJob.objects.get(id=job_id)
         job.status = 'running'
-        job.save()
+        job.save(update_fields=['status'])
     except ScrapeJob.DoesNotExist:
         return
 
@@ -233,201 +598,122 @@ def run_playwright_scraper(job_id, target_count=30):
     if not sub_queries:
         sub_queries = [job.query.strip()]
 
-    # Mode Target:
-    # Jika target_count <= 0 atau >= 999 -> Mode SEBANYAK-BANYAKNYA (Maksimal s/d Habis di Google Maps)
-    # Jika target_count > 0 -> Target penuh per kategori (TIDAK DIBAGI!)
     is_unlimited = (target_count <= 0 or target_count >= 999)
-    if is_unlimited:
-        per_category_target = 999999
-        max_scroll_attempts = 45
-    else:
-        per_category_target = target_count
-        max_scroll_attempts = max(10, (per_category_target // 5) + 5)
+    per_category_target = 999999 if is_unlimited else target_count
+    max_scroll_attempts = 45 if is_unlimited else max(10, (per_category_target // 5) + 5)
 
-    logger.info(f"Memulai Playwright scraping untuk job {job_id} ({len(sub_queries)} kategori, target {'UNLIMITED' if is_unlimited else per_category_target}): {sub_queries}")
-    scraped_count = 0
-    seen_urls = set()
+    # Tentukan jumlah worker tab paralel (1 tab jika hanya 1 kategori, hingga 3 tab untuk multi-kategori)
+    num_workers = min(3, max(1, len(sub_queries)))
 
+    logger.info(f"Memulai Playwright Multi-Tab Scraping untuk job {job_id} ({len(sub_queries)} kategori dengan {num_workers} worker paralel, target: {'UNLIMITED' if is_unlimited else per_category_target}): {sub_queries}")
+
+    task_queue = queue.Queue()
+    for cat_idx, cat_name in enumerate(sub_queries, start=1):
+        task_queue.put((cat_idx, cat_name))
+
+    db_lock = threading.Lock()
+    worker_errors = []
+    shared_stats = {
+        'scraped_count': 0,
+        'seen_urls': set(),
+        'seen_places': set()
+    }
+
+    # Pre-populate seen places dari database untuk mempercepat deduplikasi
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage"
-                ]
-            )
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                locale="id-ID",
-                viewport={"width": 1280, "height": 850}
-            )
-            page = context.new_page()
-
-            for cat_idx, cat_name in enumerate(sub_queries, start=1):
-                if is_job_cancelled(job_id):
-                    logger.info(f"Job {job_id} dibatalkan oleh pengguna sebelum kategori '{cat_name}'.")
-                    break
-
-                # Bentuk query pencarian presisi untuk kategori ini
-                parts = [cat_name]
-                if job.district:
-                    if not job.district.lower().startswith('kecamatan'):
-                        parts.append(f"Kecamatan {job.district}")
-                    else:
-                        parts.append(job.district)
-                if job.location:
-                    parts.append(job.location)
-
-                if len(parts) == 1:
-                    item_full_query = parts[0]
-                elif len(parts) == 2:
-                    item_full_query = f"{parts[0]} di {parts[1]}"
+        for p_name, p_lat, p_lng, p_addr in Place.objects.values_list('name', 'latitude', 'longitude', 'address')[:5000]:
+            if p_name:
+                p_clean = p_name.strip().lower()
+                if p_lat is not None and p_lng is not None:
+                    shared_stats['seen_places'].add((p_clean, round(p_lat, 4), round(p_lng, 4)))
                 else:
-                    item_full_query = f"{parts[0]} di {parts[1]}, {parts[2]}"
+                    shared_stats['seen_places'].add((p_clean, (p_addr or '').strip().lower()))
+    except Exception:
+        pass
 
-                logger.info(f"[{cat_idx}/{len(sub_queries)}] Scraping: '{item_full_query}' (target: {'Sebanyak-banyaknya' if is_unlimited else per_category_target})")
-                encoded_query = urllib.parse.quote_plus(item_full_query)
-                search_url = f"https://www.google.com/maps/search/{encoded_query}/"
-
-                try:
-                    page.goto(search_url, timeout=35000, wait_until="domcontentloaded")
-                    page.wait_for_timeout(3000)
-                except Exception as nav_err:
-                    logger.warning(f"Navigasi timeout untuk '{item_full_query}': {nav_err}")
-                    continue
-
-                # Scroll feed secara bertahap sampai target atau ujung feed tercapai
-                scroll_count = 0
-                prev_len = 0
-                consecutive_same_len = 0
-
-                while scroll_count < max_scroll_attempts:
-                    if is_job_cancelled(job_id):
-                        logger.info(f"Job {job_id} dibatalkan oleh pengguna saat scrolling '{cat_name}'.")
-                        break
-
-                    page.mouse.move(250, 350)
-                    page.mouse.wheel(0, 3500)
-                    page.wait_for_timeout(1800)
-                    scroll_count += 1
-
-                    links = page.locator("div[role='feed'] a[href*='/maps/place/']").all()
-                    curr_len = len(links)
-                    if not is_unlimited and curr_len >= per_category_target:
-                        break
-
-                    if curr_len == prev_len:
-                        consecutive_same_len += 1
-                        if consecutive_same_len >= 3:
-                            break
-                    else:
-                        consecutive_same_len = 0
-                    prev_len = curr_len
-
-                    end_text = page.locator("text='Anda telah mencapai akhir daftar', text=\"You've reached the end of the list\"")
-                    if end_text.count() > 0:
-                        break
-
-                if is_job_cancelled(job_id):
-                    break
-
-                # Ekstrak data dari kartu yang ditemukan untuk kategori ini
-                links = page.locator("div[role='feed'] a[href*='/maps/place/']").all()
-                cat_scraped = 0
-
-                for item in links:
-                    if is_job_cancelled(job_id):
-                        logger.info(f"Job {job_id} dibatalkan oleh pengguna saat ekstraksi data.")
-                        break
-
-                    if not is_unlimited and cat_scraped >= per_category_target:
-                        break
-
-                    href = item.get_attribute("href") or ""
-                    if not href or href in seen_urls:
-                        continue
-                    seen_urls.add(href)
-
-                    name = item.get_attribute("aria-label") or ""
-                    if not name:
-                        name = item.inner_text().split("\n")[0].strip()
-                    if not name:
-                        continue
-
-                    # Ambil teks kontainer induk untuk detail
-                    parent = item.locator("xpath=..")
-                    parent_lines = [l.strip() for l in parent.inner_text().split("\n") if l.strip()]
-
-                    # Ekstraksi rating & reviews
-                    rating, reviews = parse_rating_reviews(parent, parent_lines)
-
-                    # Ekstraksi kategori dan alamat
-                    category, address = parse_category_and_address(parent_lines)
-
-                    # Ekstraksi koordinat
-                    lat, lng = parse_coordinates_from_url(href)
-
-                    # Cek aturan deduplikasi: HANYA skip jika Nama DAN Geolokasi SAMA
-                    if check_is_duplicate(name, lat, lng, address):
-                        logger.info(f"Deduplikasi: '{name}' di lokasi sama dilewati.")
-                        continue
-
-                    # Deteksi Kecamatan secara otomatis & presisi
-                    district_name = job.district.strip() if job.district else ""
-                    if not district_name:
-                        # Coba deteksi dari teks alamat
-                        addr_lower = (address or "").lower()
-                        for d in ['Colomadu', 'Gondangrejo', 'Jaten', 'Jatipuro', 'Jatiyoso', 'Jenawi', 'Jumantono', 'Jumapolo', 'Karanganyar', 'Karangpandan', 'Kebakkramat', 'Kerjo', 'Matesih', 'Mojogedang', 'Ngargoyoso', 'Tasikmadu', 'Tawangmangu']:
-                            if d.lower() in addr_lower:
-                                district_name = d
-                                break
-                    if not district_name:
-                        q_lower = (item_full_query or "").lower()
-                        for d in ['Colomadu', 'Gondangrejo', 'Jaten', 'Jatipuro', 'Jatiyoso', 'Jenawi', 'Jumantono', 'Jumapolo', 'Karanganyar', 'Karangpandan', 'Kebakkramat', 'Kerjo', 'Matesih', 'Mojogedang', 'Ngargoyoso', 'Tasikmadu', 'Tawangmangu']:
-                            if d.lower() in q_lower:
-                                district_name = d
-                                break
-                    if not district_name:
-                        district_name = "Kabupaten Karanganyar"
-
-                    # Simpan ke database dengan kategori dan kecamatan yang pasti terisi
-                    Place.objects.create(
-                        job=job,
-                        name=name,
-                        category=category or cat_name,
-                        district=district_name,
-                        address=address,
-                        rating=rating,
-                        reviews_count=reviews,
-                        google_maps_url=href,
-                        latitude=lat,
-                        longitude=lng,
-                        search_query=item_full_query
-                    )
-                    scraped_count += 1
-                    cat_scraped += 1
-                    job.total_scraped = scraped_count
-                    job.save(update_fields=['total_scraped'])
-
-            browser.close()
-
-        if is_job_cancelled(job_id):
-            job.mark_cancelled(total=scraped_count)
-            logger.info(f"Job {job_id} berhasil dihentikan atas permintaan pengguna ({scraped_count} tempat tersimpan).")
-            return
-
-        job.mark_completed(scraped_count)
-        logger.info(f"Job {job_id} berhasil selesai dengan {scraped_count} tempat.")
-
-    except Exception as e:
-        logger.error(f"Error pada Playwright scraper untuk job {job_id}: {str(e)}", exc_info=True)
-        job.mark_failed(str(e))
-    finally:
-        clear_cancelled_job(job_id)
+    def worker_loop(worker_id):
         close_old_connections()
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--disable-blink-features=AutomationControlled",
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu"
+                    ]
+                )
+                context = browser.new_context(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    locale="id-ID",
+                    viewport={"width": 1280, "height": 850}
+                )
+                page = context.new_page()
+
+                while not task_queue.empty():
+                    if is_job_cancelled(job_id):
+                        break
+                    try:
+                        cat_idx, cat_name = task_queue.get_nowait()
+                    except queue.Empty:
+                        break
+
+                    try:
+                        scrape_single_category(
+                            worker_id=worker_id,
+                            page=page,
+                            cat_name=cat_name,
+                            cat_idx=cat_idx,
+                            total_cats=len(sub_queries),
+                            job_id=job_id,
+                            is_unlimited=is_unlimited,
+                            per_category_target=per_category_target,
+                            max_scroll_attempts=max_scroll_attempts,
+                            shared_stats=shared_stats,
+                            db_lock=db_lock
+                        )
+                    except Exception as cat_err:
+                        logger.error(f"[Tab-{worker_id}] Error pada '{cat_name}': {cat_err}", exc_info=True)
+                    finally:
+                        task_queue.task_done()
+
+                browser.close()
+        except Exception as proc_err:
+            logger.error(f"[Tab-{worker_id}] Browser worker error: {proc_err}", exc_info=True)
+            with db_lock:
+                worker_errors.append(str(proc_err))
+        finally:
+            close_old_connections()
+
+    # Jalankan worker threads secara paralel
+    worker_threads = []
+    for wid in range(1, num_workers + 1):
+        t = threading.Thread(target=worker_loop, args=(wid,), daemon=True)
+        worker_threads.append(t)
+        t.start()
+
+    # Tunggu semua worker selesai
+    for t in worker_threads:
+        t.join()
+
+    # Finalisasi status job
+    job.refresh_from_db()
+    total_final = shared_stats['scraped_count']
+    if is_job_cancelled(job_id):
+        job.mark_cancelled(total=total_final)
+        logger.info(f"Job {job_id} berhasil dihentikan atas permintaan pengguna ({total_final} tempat tersimpan).")
+    elif total_final == 0 and len(worker_errors) >= num_workers:
+        err_detail = f"Gagal menjalankan peramban Playwright: {'; '.join(worker_errors[:2])}"
+        job.mark_failed(err_detail)
+        logger.error(f"Job {job_id} gagal: {err_detail}")
+    else:
+        job.mark_completed(total_final)
+        logger.info(f"Job {job_id} berhasil selesai dengan {total_final} tempat menggunakan {num_workers} tab paralel.")
+
+    clear_cancelled_job(job_id)
+    close_old_connections()
 
 
 

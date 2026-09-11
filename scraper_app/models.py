@@ -1,3 +1,4 @@
+import re
 from django.db import models
 from django.utils import timezone
 
@@ -78,3 +79,44 @@ class Place(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.category or 'Umum'}"
+
+    @property
+    def clean_wa_phone(self):
+        """
+        Format nomor telepon untuk link WhatsApp https://wa.me/62...
+        Mendukung nomor awalan 08..., +62..., 628...
+        """
+        if not self.phone:
+            return ""
+        num = re.sub(r'[^\d]', '', str(self.phone))
+        if num.startswith('08'):
+            return '62' + num[1:]
+        elif num.startswith('628'):
+            return num
+        elif len(num) >= 9 and num.startswith('8'):
+            return '62' + num
+        return ""
+
+    @property
+    def display_category(self):
+        """
+        Kembalikan nama kategori yang bersih dari teks status operasional ('Buka'/'Tutup')
+        """
+        cat = (self.category or "").strip()
+        if cat and cat.lower() not in ['buka', 'tutup', 'open', 'closed'] and 'pukul' not in cat.lower():
+            return cat
+        if self.search_query:
+            clean = re.split(r'\s+di\s+|\s+in\s+|,', self.search_query, flags=re.IGNORECASE)[0].strip()
+            if clean and clean.lower() not in ['buka', 'tutup', 'open', 'closed']:
+                return clean.title()
+        return "Bisnis"
+
+    @property
+    def display_address(self):
+        """
+        Kembalikan alamat yang bersih dari teks status operasional
+        """
+        addr = (self.address or "").strip()
+        if addr and addr.lower() not in ['buka', 'tutup', 'open', 'closed'] and 'tutup pukul' not in addr.lower() and 'buka pukul' not in addr.lower():
+            return addr
+        return "-"
