@@ -4,6 +4,7 @@ import logging
 import pandas as pd
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from .category_normalizer import normalize_category
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +32,7 @@ def resolve_district(place):
         'Colomadu', 'Gondangrejo', 'Jaten', 'Jatipuro', 'Jatiyoso', 
         'Jenawi', 'Jumantono', 'Jumapolo', 'Karanganyar', 'Karangpandan', 
         'Kebakkramat', 'Kerjo', 'Matesih', 'Mojogedang', 'Ngargoyoso', 
-        'Tasikmadu', 'Tawangmangu', 'Tebet', 'Kebayoran Baru', 'Kebayoran Lama',
-        'Cilandak', 'Setiabudi', 'Mampang Prapatan', 'Pancoran', 'Pasar Minggu'
+        'Tasikmadu', 'Tawangmangu'
     ]
     for d in known_districts:
         if d.lower() in combined.lower():
@@ -49,11 +49,41 @@ OPERATIONAL_KEYWORDS = {
     'pesan antar', 'drive-through', 'antar tanpa bertemu', 'no-contact delivery'
 }
 
+NON_CATEGORY_TERMS = {
+    'bersponsor', 'sponsored', 'iklan', 'ad', 'ads',
+    'sesuai untuk keluarga', 'ramah anak', 'populer', 'terpopuler',
+    'indonesia', 'jawa', 'jawa tengah', 'jawa barat', 'jawa timur',
+    'bisnis', 'tempat',
+    # Tombol aksi & label antarmuka Google Maps
+    'rute', 'directions', 'direction', 'situs web', 'website',
+    'simpan', 'save', 'saved', 'bagikan', 'share',
+    'telepon', 'call', 'pesan', 'message', 'ringkasan', 'overview',
+    'tentang', 'about', 'nearby', 'di sekitar', 'mulai', 'start',
+    'foto', 'photo', 'photos', 'menu', 'ulasan', 'review', 'reviews'
+}
+
+
+def clean_text_glyphs(text):
+    """
+    Hapus karakter Private Use Area Unicode (ikon Google Maps: \\uE000-\\uF8FF),
+    karakter kontrol, dan simbol bullet murni.
+    """
+    if not text:
+        return ""
+    cleaned = re.sub(r'[\ue000-\uf8ff]', '', text)
+    cleaned = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', cleaned)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    if re.match(r'^[\s\·\•\-\.\,\:\;\|\/\\]*$', cleaned):
+        return ""
+    return cleaned
+
 
 def is_operational_or_status(text):
     if not text:
         return True
-    t = text.strip().lower()
+    t = clean_text_glyphs(text).strip().lower()
+    if not t:
+        return True
     if t in OPERATIONAL_KEYWORDS:
         return True
     if re.search(r'^(buka|tutup|open|closed)\b', t):
@@ -65,32 +95,139 @@ def is_operational_or_status(text):
     return False
 
 
+def is_rating_review_text(text):
+    if not text:
+        return False
+    t = clean_text_glyphs(text).strip().lower()
+    if not t:
+        return True
+    if any(phrase in t for phrase in [
+        'tidak ada ulasan', 'belum ada ulasan', 'tanpa ulasan',
+        'no reviews', 'no review', 'no rating'
+    ]):
+        return True
+    if re.search(r'^\d+[\.\)]\s*(?:tidak ada ulasan|belum ada ulasan|no reviews?)', t):
+        return True
+    if re.search(r'^[1-5][,\.]\d\s*(?:\([0-9\.\,]+\))?$', t):
+        return True
+    if re.search(r'^\([0-9\.\,]+\)$', t):
+        return True
+    if re.search(r'^\d+[\.,]?\d*\s*(?:ulasan|reviews?|bintang|stars?)$', t):
+        return True
+    return False
+
+
+def is_likely_address(text):
+    if not text:
+        return False
+    t = clean_text_glyphs(text).strip()
+    if not t or is_operational_or_status(t) or is_rating_review_text(t):
+        return False
+    t_lower = t.lower()
+    if re.search(r'^hotel\s+bintang\s+\d', t_lower):
+        return False
+    if re.search(r'(?:rp\s*[\d\.]+|\/malam|per malam)', t_lower):
+        return False
+    if re.search(r'\b[2-9CFGHJMPQRVWX]{4,8}\+[2-9CFGHJMPQRVWX]{2,3}\b', t, re.I):
+        return True
+    if any(k in t_lower for k in [
+        'jl.', 'jalan', 'raya', 'no.', 'rt.', 'rw.', 'gang', 'gg.',
+        'kelurahan', 'kecamatan', 'kabupaten', 'kota', 'komplek',
+        'blok', 'dusun', 'desa', 'perumahan', 'perum'
+    ]):
+        return True
+    if re.search(r'\b\d{5}\b', t):
+        return True
+    if any(char.isdigit() for char in t) and len(t) >= 15 and not t_lower.startswith('hotel'):
+        return True
+    return False
+
+
+def is_valid_category_candidate(text):
+    if not text:
+        return False
+    t = clean_text_glyphs(text).strip()
+    if not t or len(t) < 2 or len(t) > 50:
+        return False
+    t_lower = t.lower()
+    if is_operational_or_status(t_lower) or is_rating_review_text(t_lower):
+        return False
+    if t_lower in NON_CATEGORY_TERMS:
+        return False
+    if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")) or '?' in t:
+        return False
+    if re.search(r'(?:rp\s*[\d\.]+|\/malam|per malam|\$\$\$?)', t_lower):
+        return False
+    if is_likely_address(t):
+        return False
+    if re.match(r'^[2-9A-Z]{4,8}\+?[2-9A-Z]{2,4}$', t, re.I):
+        return False
+    if len(t) >= 5 and re.match(r'^[A-Z0-9]+$', t) and not any(v in t_lower for v in ['a', 'i', 'u', 'e', 'o']):
+        return False
+    if not re.search(r'[a-zA-Z]', t):
+        return False
+    if re.search(r'^[\d\s\-\+\(\)]{8,}$', t):
+        return False
+    return True
+
+
 def resolve_category(place):
     """
-    Pastikan kolom Kategori selalu berisi nama bidang usaha/kategori yang benar,
-    bukan teks status jam operasional (seperti 'Buka' atau 'Tutup').
+    Pastikan kolom Kategori di Excel selalu berisi nama bidang usaha/kategori yang benar dan terunifikasi,
+    bukan teks 'Tidak ada ulasan', simbol bullet '·', tombol UI ('Rute'), Plus Code, atau status jam operasional.
     """
-    cat = (place.category or "").strip()
-    if cat and not is_operational_or_status(cat):
-        return cat
+    search_q = (place.search_query or (place.job.query if place.job else "")).strip()
 
-    sq = (place.search_query or "").strip()
-    if sq:
-        clean_sq = re.split(r'\s+di\s+|\s+in\s+|,', sq, flags=re.IGNORECASE)[0].strip()
-        if clean_sq and not is_operational_or_status(clean_sq):
-            return clean_sq.title()
+    candidate = ""
+    cat = clean_text_glyphs(place.category or "").strip()
+    if is_valid_category_candidate(cat):
+        candidate = cat
+    else:
+        # Cek apakah kategori tersasar di kolom alamat (misal: 'Kantor Perusahaan · 93M3+Q7J' atau 'Hotel bintang 3')
+        addr = clean_text_glyphs(place.address or "").strip()
+        if '·' in addr or '•' in addr:
+            parts = [p.strip() for p in re.split(r'[·•]', addr) if p.strip()]
+            for p in parts:
+                if is_valid_category_candidate(p):
+                    candidate = p
+                    break
+        elif is_valid_category_candidate(addr) and not is_likely_address(addr):
+            candidate = addr
 
-    return "Bisnis"
+        # Fallback ke kata kunci pencarian (search_query / job.query)
+        if not candidate and search_q:
+            clean_sq = re.split(r'\s+di\s+|\s+in\s+|,', search_q, flags=re.IGNORECASE)[0].strip()
+            if is_valid_category_candidate(clean_sq):
+                candidate = clean_sq
+
+    if not candidate:
+        candidate = "Bisnis"
+
+    return normalize_category(candidate, search_q)
 
 
 def resolve_address(place):
     """
-    Pastikan alamat tidak memuat teks jam operasional (seperti 'Tutup pukul 17.30')
+    Pastikan alamat tidak memuat teks jam operasional, harga hotel, atau pecahan kategori
     """
-    addr = (place.address or "").strip()
-    if addr and not is_operational_or_status(addr):
-        return addr
-    return "-"
+    addr = clean_text_glyphs(place.address or "").strip()
+    if not addr or is_operational_or_status(addr) or is_rating_review_text(addr):
+        return "-"
+
+    # Jika alamat memuat format 'Kategori · Alamat' (misal: 'Kantor Perusahaan · 93M3+Q7J')
+    if '·' in addr or '•' in addr:
+        parts = [p.strip() for p in re.split(r'[·•]', addr) if p.strip()]
+        addr_parts = [p for p in parts if is_likely_address(p) or not is_valid_category_candidate(p)]
+        if addr_parts:
+            clean_res = ", ".join(addr_parts)
+            if not is_operational_or_status(clean_res) and not is_rating_review_text(clean_res):
+                return clean_res
+
+    # Jika alamat adalah nama kategori hotel (seperti 'Hotel bintang 4') atau harga, kosongkan
+    if re.search(r'^hotel\s+bintang\s+\d', addr.lower()) or re.search(r'(?:rp\s*[\d\.]+|\/malam)', addr.lower()):
+        return "-"
+
+    return addr
 
 
 DEFAULT_EXPORT_COLUMNS = [

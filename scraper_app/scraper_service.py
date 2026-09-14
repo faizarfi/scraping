@@ -11,6 +11,7 @@ os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
 from django.db import close_old_connections
 from django.utils import timezone
 from .models import ScrapeJob, Place
+from .category_normalizer import normalize_category
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,38 @@ OPERATIONAL_KEYWORDS = {
     'pesan antar', 'drive-through', 'antar tanpa bertemu', 'no-contact delivery'
 }
 
+NON_CATEGORY_TERMS = {
+    'bersponsor', 'sponsored', 'iklan', 'ad', 'ads',
+    'sesuai untuk keluarga', 'ramah anak', 'populer', 'terpopuler',
+    'indonesia', 'jawa', 'jawa tengah', 'jawa barat', 'jawa timur',
+    'bisnis', 'tempat',
+    # Tombol aksi & label antarmuka Google Maps
+    'rute', 'directions', 'direction', 'situs web', 'website',
+    'simpan', 'save', 'saved', 'bagikan', 'share',
+    'telepon', 'call', 'pesan', 'message', 'ringkasan', 'overview',
+    'tentang', 'about', 'nearby', 'di sekitar', 'mulai', 'start',
+    'foto', 'photo', 'photos', 'menu', 'ulasan', 'review', 'reviews'
+}
+
+
+def clean_text_glyphs(text):
+    """
+    Hapus karakter Private Use Area Unicode (ikon Google Maps: \\uE000-\\uF8FF),
+    karakter kontrol, dan simbol bullet murni.
+    """
+    if not text:
+        return ""
+    # Hapus karakter Private Use Area Unicode (ikon font Google Maps)
+    cleaned = re.sub(r'[\ue000-\uf8ff]', '', text)
+    # Hapus karakter kontrol non-printable
+    cleaned = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', cleaned)
+    # Normalkan spasi
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    # Jika hanya simbol tanda baca / bullet / titik saja
+    if re.match(r'^[\s\·\•\-\.\,\:\;\|\/\\]*$', cleaned):
+        return ""
+    return cleaned
+
 
 def is_operational_or_status(text):
     """
@@ -133,7 +166,9 @@ def is_operational_or_status(text):
     """
     if not text:
         return True
-    t = text.strip().lower()
+    t = clean_text_glyphs(text).strip().lower()
+    if not t:
+        return True
     if t in OPERATIONAL_KEYWORDS:
         return True
     if re.search(r'^(buka|tutup|open|closed)\b', t):
@@ -147,77 +182,150 @@ def is_operational_or_status(text):
 
 def is_rating_review_text(text):
     """
-    Periksa apakah teks hanya memuat angka rating atau jumlah ulasan
+    Periksa apakah teks memuat informasi rating atau ulasan
+    (misal: 'Tidak ada ulasan', '4,8 bintang', '4.5(120)', '(1.234)', dsb)
     """
     if not text:
         return False
-    t = text.strip()
+    t = clean_text_glyphs(text).strip().lower()
+    if not t:
+        return True
+    # Teks tanpa ulasan (Indonesia / English)
+    if any(phrase in t for phrase in [
+        'tidak ada ulasan', 'belum ada ulasan', 'tanpa ulasan',
+        'no reviews', 'no review', 'no rating'
+    ]):
+        return True
+    # Pola review dengan nomor urut seperti '1. Tidak ada ulasan'
+    if re.search(r'^\d+[\.\)]\s*(?:tidak ada ulasan|belum ada ulasan|no reviews?)', t):
+        return True
+    # Pola rating angka seperti '4,8' atau '4.5' atau '4,8(120)'
     if re.search(r'^[1-5][,\.]\d\s*(?:\([0-9\.\,]+\))?$', t):
         return True
+    # Pola jumlah ulasan dalam kurung seperti '(1.234)'
     if re.search(r'^\([0-9\.\,]+\)$', t):
+        return True
+    # Pola ulasan/bintang seperti '120 ulasan', '4,5 bintang', '5 stars'
+    if re.search(r'^\d+[\.,]?\d*\s*(?:ulasan|reviews?|bintang|stars?)$', t):
         return True
     return False
 
 
 def is_likely_address(text):
     """
-    Evaluasi apakah teks adalah alamat fisik valid
+    Evaluasi apakah teks adalah alamat fisik atau Plus Code Google Maps valid
     """
-    if not text or is_operational_or_status(text):
+    if not text:
         return False
-    t = text.strip().lower()
-    if any(k in t for k in ['jl.', 'jalan', 'raya', 'no.', 'rt.', 'rw.', 'gang', 'gg.', 'kelurahan', 'kecamatan', 'kabupaten', 'kota', 'komplek', 'blok']):
+    t = clean_text_glyphs(text).strip()
+    if not t or is_operational_or_status(t) or is_rating_review_text(t):
+        return False
+    t_lower = t.lower()
+    # Jangan anggap kategori hotel bintang sebagai alamat
+    if re.search(r'^hotel\s+bintang\s+\d', t_lower):
+        return False
+    # Jangan anggap harga kamar sebagai alamat
+    if re.search(r'(?:rp\s*[\d\.]+|\/malam|per malam)', t_lower):
+        return False
+    # Plus Code Google Maps (misal: '93M3+Q7J', 'CW6G+PXG, Karanganyar')
+    if re.search(r'\b[2-9CFGHJMPQRVWX]{4,8}\+[2-9CFGHJMPQRVWX]{2,3}\b', t, re.I):
         return True
-    if any(char.isdigit() for char in t) and len(t) >= 12:
+    # Kata kunci alamat fisik umum di Indonesia
+    if any(k in t_lower for k in [
+        'jl.', 'jalan', 'raya', 'no.', 'rt.', 'rw.', 'gang', 'gg.',
+        'kelurahan', 'kecamatan', 'kabupaten', 'kota', 'komplek',
+        'blok', 'dusun', 'desa', 'perumahan', 'perum'
+    ]):
+        return True
+    # Format kode pos 5 digit
+    if re.search(r'\b\d{5}\b', t):
+        return True
+    # Alamat yang memuat nomor dan cukup panjang
+    if any(char.isdigit() for char in t) and len(t) >= 15 and not t_lower.startswith('hotel'):
         return True
     return False
+
+
+def is_valid_category_candidate(text):
+    """
+    Validasi ketat apakah suatu string layak menjadi nama kategori bisnis
+    """
+    if not text:
+        return False
+    t = clean_text_glyphs(text).strip()
+    if not t or len(t) < 2 or len(t) > 50:
+        return False
+    t_lower = t.lower()
+    if is_operational_or_status(t_lower) or is_rating_review_text(t_lower):
+        return False
+    if t_lower in NON_CATEGORY_TERMS:
+        return False
+    # Jangan terima kutipan testimoni atau pertanyaan (misal: '"Bisa order untuk di kirim?"')
+    if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")) or '?' in t:
+        return False
+    # Jangan terima harga atau tarif hotel
+    if re.search(r'(?:rp\s*[\d\.]+|\/malam|per malam|\$\$\$?)', t_lower):
+        return False
+    # Jangan terima jika murni alamat atau plus code
+    if is_likely_address(t):
+        return False
+    # Tolak Plus Code Google Maps (misal 'CVCW+RC8' atau 'CVCWRC8' atau '93M3+Q7J')
+    if re.match(r'^[2-9A-Z]{4,8}\+?[2-9A-Z]{2,4}$', t, re.I):
+        return False
+    # Tolak kode alfanumerik kapital tanpa huruf vokal (seperti 'CVCWRC8')
+    if len(t) >= 5 and re.match(r'^[A-Z0-9]+$', t) and not any(v in t_lower for v in ['a', 'i', 'u', 'e', 'o']):
+        return False
+    # Harus memuat setidaknya satu huruf alfabet
+    if not re.search(r'[a-zA-Z]', t):
+        return False
+    # Jangan terima nomor telepon
+    if re.search(r'^[\d\s\-\+\(\)]{8,}$', t):
+        return False
+    return True
 
 
 def parse_category_and_address(lines, place_name=""):
     """
     Ekstrak kategori dan alamat dari teks kartu Google Maps secara akurat,
-    dengan menyaring teks status jam operasional ('Buka', 'Tutup pukul...', dsb)
-    serta mengabaikan baris nama tempat agar tidak terdeteksi sebagai kategori.
+    dengan menyaring teks status jam operasional, rating/ulasan ('Tidak ada ulasan'),
+    glyph ikon Unicode, dan badge non-kategori.
     """
     category = ""
     address = ""
 
     clean_lines = []
-    p_name_lower = (place_name or "").strip().lower()
+    p_name_lower = clean_text_glyphs(place_name or "").strip().lower()
 
     for line in lines:
-        cleaned = line.strip()
+        cleaned = clean_text_glyphs(line).strip()
         if not cleaned:
             continue
-        # Lewati jika baris murni status jam operasional (misal "Buka · Tutup pukul 21.00")
-        if is_operational_or_status(cleaned):
-            continue
-        # Lewati jika baris adalah nama tempat itu sendiri
         if p_name_lower and cleaned.lower() == p_name_lower:
             continue
+        # Hanya lewati jika baris murni tanpa pemisah dan berstatus operasional/ulasan
+        if '·' not in cleaned and '•' not in cleaned:
+            if is_operational_or_status(cleaned) or is_rating_review_text(cleaned):
+                continue
         clean_lines.append(cleaned)
 
     for cleaned in clean_lines:
         # Periksa apakah ada pemisah · atau •
         if '·' in cleaned or '•' in cleaned:
-            parts = [p.strip() for p in re.split(r'[·•]', cleaned) if p.strip()]
-            valid_parts = [p for p in parts if not is_operational_or_status(p)]
+            raw_parts = [clean_text_glyphs(p).strip() for p in re.split(r'[·•]', cleaned)]
+            valid_parts = [p for p in raw_parts if p and not is_operational_or_status(p) and not is_rating_review_text(p)]
 
             for p in valid_parts:
-                if is_rating_review_text(p):
-                    continue
-                if is_likely_address(p):
-                    if not address:
-                        address = p
-                    continue
-                if not category and len(p) <= 40 and not any(char.isdigit() for char in p[:4]):
+                if not category and is_valid_category_candidate(p):
                     category = p
+                    continue
+                if not address and is_likely_address(p):
+                    address = p
+                    continue
         else:
-            if is_likely_address(cleaned):
-                if not address:
-                    address = cleaned
-            elif not category and not is_rating_review_text(cleaned) and len(cleaned) <= 40 and not any(char.isdigit() for char in cleaned[:4]):
+            if not category and is_valid_category_candidate(cleaned):
                 category = cleaned
+            elif not address and is_likely_address(cleaned):
+                address = cleaned
 
         if category and address:
             break
@@ -231,10 +339,26 @@ def parse_category_and_address(lines, place_name=""):
                 address = cleaned
                 break
 
-    if is_operational_or_status(category):
+    # Sanitasi jika alamat masih menggabungkan kategori (misal: 'Kantor Perusahaan · 93M3+Q7J')
+    if address and ('·' in address or '•' in address):
+        p_addr = [clean_text_glyphs(x).strip() for x in re.split(r'[·•]', address) if clean_text_glyphs(x).strip()]
+        for part in p_addr:
+            if not category and is_valid_category_candidate(part):
+                category = part
+            elif is_likely_address(part):
+                address = part
+
+    # Sanitasi akhir: jika kategori tertukar ke alamat (misal: 'Hotel bintang 3' atau 'Biro Perjalanan')
+    if not category and address and is_valid_category_candidate(address) and not is_likely_address(address):
+        category = address
+        address = ""
+
+    # Pastikan kategori valid
+    if not is_valid_category_candidate(category):
         category = ""
 
-    if is_operational_or_status(address):
+    # Pastikan alamat valid
+    if is_operational_or_status(address) or is_rating_review_text(address) or re.search(r'(?:rp\s*[\d\.]+|\/malam)', address.lower()):
         address = ""
 
     return category, address
@@ -275,26 +399,47 @@ def parse_phone_and_website(parent, lines):
     return phone, website
 
 
+# Pemetaan resmi kecamatan per kabupaten untuk deep grid scraping hingga ke pelosok
+LOCATION_DISTRICTS_MAP = {
+    'karanganyar': [
+        'Colomadu', 'Gondangrejo', 'Jaten', 'Jatipuro', 'Jatiyoso', 
+        'Jenawi', 'Jumantono', 'Jumapolo', 'Karanganyar', 'Karangpandan', 
+        'Kebakkramat', 'Kerjo', 'Matesih', 'Mojogedang', 'Ngargoyoso', 
+        'Tasikmadu', 'Tawangmangu'
+    ]
+}
+
+
+def get_districts_for_location(location_str):
+    """
+    Kembalikan daftar seluruh kecamatan resmi untuk lokasi/kabupaten tertentu jika tersedia
+    """
+    if not location_str:
+        return []
+    loc_lower = location_str.lower()
+    for key, districts in LOCATION_DISTRICTS_MAP.items():
+        if key in loc_lower:
+            return districts
+    return []
+
+
 def resolve_district_from_text(address_text, query_text="", preset_district=""):
     """
     Deteksi nama kecamatan secara cerdas & universal untuk kota manapun di Indonesia:
-    1. Preset jika dipilih secara spesifik oleh pengguna
-    2. Ekstraksi otomatis dari teks alamat menggunakan pola regex 'Kecamatan X' atau 'Kec. X'
-    3. Ekstraksi dari daftar kecamatan yang dikenal
+    1. Ekstraksi otomatis dari teks alamat menggunakan pola regex 'Kecamatan X' atau 'Kec. X'
+    2. Cek apakah ada kecamatan yang dikenal di dalam teks alamat
+    3. Jika alamat tidak mencantumkan nama kecamatan, gunakan preset_district (dari query target)
+    4. Cek query_text jika masih belum ditemukan
     """
-    if preset_district and preset_district.strip():
-        return preset_district.strip()
+    combined_addr = address_text or ""
 
-    combined = f"{address_text or ''} {query_text or ''}"
-
-    # Deteksi regex umum: "Kecamatan Sukajadi", "Kec. Tebet", "Kecamatan Senen", dll.
-    m = re.search(r'Kec(?:amatan|\.)\s+([A-Za-z0-9\s]+?)(?:,|$|\.|\d|\-)', combined, re.IGNORECASE)
+    # 1. Deteksi regex pada teks alamat: "Kecamatan Sukajadi", "Kec. Tebet", dll.
+    m = re.search(r'Kec(?:amatan|\.)\s+([A-Za-z0-9\s]+?)(?:,|$|\.|\d|\-)', combined_addr, re.IGNORECASE)
     if m:
         name = m.group(1).strip()
         if 3 <= len(name) <= 30:
             return name.title()
 
-    # Cek daftar kecamatan spesifik jika cocok
     known_districts = [
         'Colomadu', 'Gondangrejo', 'Jaten', 'Jatipuro', 'Jatiyoso', 
         'Jenawi', 'Jumantono', 'Jumapolo', 'Karanganyar', 'Karangpandan', 
@@ -303,7 +448,23 @@ def resolve_district_from_text(address_text, query_text="", preset_district=""):
         'Cilandak', 'Setiabudi', 'Mampang Prapatan', 'Pancoran', 'Pasar Minggu'
     ]
     for d in known_districts:
-        if d.lower() in combined.lower():
+        if d.lower() in combined_addr.lower():
+            return d
+
+    # 2. Jika tidak ada di alamat, gunakan preset_district (misal dari subdistrict query)
+    if preset_district and preset_district.strip():
+        return preset_district.strip()
+
+    # 3. Cek query_text jika belum ada
+    combined_query = query_text or ""
+    m_q = re.search(r'Kec(?:amatan|\.)\s+([A-Za-z0-9\s]+?)(?:,|$|\.|\d|\-)', combined_query, re.IGNORECASE)
+    if m_q:
+        name = m_q.group(1).strip()
+        if 3 <= len(name) <= 30:
+            return name.title()
+
+    for d in known_districts:
+        if d.lower() in combined_query.lower():
             return d
 
     return "-"
@@ -373,9 +534,10 @@ def build_full_query(job):
         return f"{parts[0]} di {parts[1]}, {parts[2]}"
 
 
-def scrape_single_category(worker_id, page, cat_name, cat_idx, total_cats, job_id, is_unlimited, per_category_target, max_scroll_attempts, shared_stats, db_lock):
+def scrape_single_category(worker_id, page, cat_name, cat_idx, total_cats, job_id, is_unlimited, per_category_target, max_scroll_attempts, shared_stats, db_lock, target_district=None):
     """
-    Eksekusi scraping untuk 1 kategori spesifik di dalam worker tab tertentu
+    Eksekusi scraping untuk 1 kategori spesifik di dalam worker tab tertentu.
+    Mendukung target_district untuk pencarian mendalam per kecamatan (Deep Grid).
     """
     from .models import ScrapeJob, Place
 
@@ -383,12 +545,15 @@ def scrape_single_category(worker_id, page, cat_name, cat_idx, total_cats, job_i
     if not job or is_job_cancelled(job_id):
         return
 
+    # Gunakan target_district jika dioper (dari deep grid), jika tidak fallback ke job.district
+    active_district = (target_district if target_district is not None else (job.district or "")).strip()
+
     parts = [cat_name]
-    if job.district:
-        if not job.district.lower().startswith('kecamatan'):
-            parts.append(f"Kecamatan {job.district}")
+    if active_district:
+        if not active_district.lower().startswith('kecamatan'):
+            parts.append(f"Kecamatan {active_district}")
         else:
-            parts.append(job.district)
+            parts.append(active_district)
     if job.location:
         parts.append(job.location)
 
@@ -439,7 +604,16 @@ def scrape_single_category(worker_id, page, cat_name, cat_idx, total_cats, job_i
 
         if curr_len == prev_len:
             consecutive_same_len += 1
-            if consecutive_same_len >= 3:
+            # Nudge scroll: jika data tampak berhenti pada kali ke-2, gerakkan scroll ke atas sedikit lalu hentak ke bawah
+            if consecutive_same_len == 2:
+                try:
+                    page.mouse.wheel(0, -800)
+                    page.wait_for_timeout(800)
+                    page.mouse.wheel(0, 4000)
+                    page.wait_for_timeout(1500)
+                except Exception:
+                    pass
+            if consecutive_same_len >= 4:
                 break
         else:
             consecutive_same_len = 0
@@ -470,7 +644,7 @@ def scrape_single_category(worker_id, page, cat_name, cat_idx, total_cats, job_i
                     s_rating, s_reviews = parse_rating_reviews(main_panel, panel_lines)
                     s_category, s_address = parse_category_and_address(panel_lines, place_name=s_name)
                     s_phone, s_website = parse_phone_and_website(main_panel, panel_lines)
-                    s_district = resolve_district_from_text(s_address, item_full_query, job.district)
+                    s_district = resolve_district_from_text(s_address, item_full_query, active_district)
 
                     s_clean_name = s_name.strip().lower()
                     if s_lat is not None and s_lng is not None:
@@ -483,8 +657,9 @@ def scrape_single_category(worker_id, page, cat_name, cat_idx, total_cats, job_i
                             if not check_is_duplicate(s_name, s_lat, s_lng, s_address):
                                 shared_stats['seen_urls'].add(s_href)
                                 shared_stats['seen_places'].add(s_key)
-                                final_cat = s_category.strip() if s_category and not is_operational_or_status(s_category) else cat_name
-                                final_addr = s_address.strip() if s_address and not is_operational_or_status(s_address) else ""
+                                raw_cat = s_category.strip() if is_valid_category_candidate(s_category) else cat_name
+                                final_cat = normalize_category(raw_cat, item_full_query)
+                                final_addr = s_address.strip() if s_address and not is_operational_or_status(s_address) and not is_rating_review_text(s_address) else ""
                                 Place.objects.create(
                                     job_id=job_id,
                                     name=s_name,
@@ -536,7 +711,7 @@ def scrape_single_category(worker_id, page, cat_name, cat_idx, total_cats, job_i
         phone, website = parse_phone_and_website(parent, parent_lines)
         lat, lng = parse_coordinates_from_url(href)
 
-        district_name = resolve_district_from_text(address, item_full_query, job.district)
+        district_name = resolve_district_from_text(address, item_full_query, active_district)
 
         name_clean = name.strip().lower()
         if lat is not None and lng is not None:
@@ -552,8 +727,9 @@ def scrape_single_category(worker_id, page, cat_name, cat_idx, total_cats, job_i
 
             shared_stats['seen_places'].add(place_key)
 
-            final_category = category.strip() if category and not is_operational_or_status(category) else cat_name
-            final_address = address.strip() if address and not is_operational_or_status(address) else ""
+            raw_category = category.strip() if is_valid_category_candidate(category) else cat_name
+            final_category = normalize_category(raw_category, item_full_query)
+            final_address = address.strip() if address and not is_operational_or_status(address) and not is_rating_review_text(address) else ""
 
             Place.objects.create(
                 job_id=job_id,
@@ -602,14 +778,35 @@ def run_playwright_scraper(job_id, target_count=30):
     per_category_target = 999999 if is_unlimited else target_count
     max_scroll_attempts = 45 if is_unlimited else max(10, (per_category_target // 5) + 5)
 
-    # Tentukan jumlah worker tab paralel (1 tab jika hanya 1 kategori, hingga 3 tab untuk multi-kategori)
-    num_workers = min(3, max(1, len(sub_queries)))
+    task_items = []
+    # Jika pengguna memilih "Semua Kecamatan" (job.district kosong) dan wilayah memiliki mapping kecamatan resmi:
+    # Lakukan dekomposisi per kecamatan secara menyeluruh (Deep Grid Iteration) agar menjangkau pelosok
+    districts_list = get_districts_for_location(job.location) if not (job.district and job.district.strip()) else []
 
-    logger.info(f"Memulai Playwright Multi-Tab Scraping untuk job {job_id} ({len(sub_queries)} kategori dengan {num_workers} worker paralel, target: {'UNLIMITED' if is_unlimited else per_category_target}): {sub_queries}")
+    if districts_list:
+        for cat_name in sub_queries:
+            for dist in districts_list:
+                task_items.append((cat_name, dist))
+            # Tambahkan pencarian kabupaten umum untuk menjangkau tempat perbatasan & pusat
+            task_items.append((cat_name, ""))
+    else:
+        single_dist = job.district.strip() if job.district else ""
+        for cat_name in sub_queries:
+            task_items.append((cat_name, single_dist))
+
+    total_tasks = len(task_items)
+    # Tentukan jumlah worker tab paralel (1 tab jika hanya 1 tugas, hingga 3 tab untuk multi-tugas)
+    num_workers = min(3, max(1, total_tasks))
+
+    logger.info(
+        f"Memulai Playwright Multi-Tab Scraping untuk job {job_id} "
+        f"({len(sub_queries)} kategori, {total_tasks} total tugas pencarian dengan {num_workers} worker paralel, "
+        f"target: {'UNLIMITED' if is_unlimited else per_category_target})"
+    )
 
     task_queue = queue.Queue()
-    for cat_idx, cat_name in enumerate(sub_queries, start=1):
-        task_queue.put((cat_idx, cat_name))
+    for task_idx, (cat_name, target_dist) in enumerate(task_items, start=1):
+        task_queue.put((task_idx, cat_name, target_dist))
 
     db_lock = threading.Lock()
     worker_errors = []
@@ -656,7 +853,7 @@ def run_playwright_scraper(job_id, target_count=30):
                     if is_job_cancelled(job_id):
                         break
                     try:
-                        cat_idx, cat_name = task_queue.get_nowait()
+                        task_idx, cat_name, target_dist = task_queue.get_nowait()
                     except queue.Empty:
                         break
 
@@ -665,17 +862,18 @@ def run_playwright_scraper(job_id, target_count=30):
                             worker_id=worker_id,
                             page=page,
                             cat_name=cat_name,
-                            cat_idx=cat_idx,
-                            total_cats=len(sub_queries),
+                            cat_idx=task_idx,
+                            total_cats=total_tasks,
                             job_id=job_id,
                             is_unlimited=is_unlimited,
                             per_category_target=per_category_target,
                             max_scroll_attempts=max_scroll_attempts,
                             shared_stats=shared_stats,
-                            db_lock=db_lock
+                            db_lock=db_lock,
+                            target_district=target_dist
                         )
                     except Exception as cat_err:
-                        logger.error(f"[Tab-{worker_id}] Error pada '{cat_name}': {cat_err}", exc_info=True)
+                        logger.error(f"[Tab-{worker_id}] Error pada '{cat_name}' ({target_dist or 'Umum'}): {cat_err}", exc_info=True)
                     finally:
                         task_queue.task_done()
 
