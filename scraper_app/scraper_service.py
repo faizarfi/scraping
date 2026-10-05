@@ -12,6 +12,11 @@ from django.db import close_old_connections
 from django.utils import timezone
 from .models import ScrapeJob, Place
 from .category_normalizer import normalize_category
+from .geo_validator import (
+    is_valid_karanganyar_place,
+    resolve_karanganyar_district,
+    check_coordinates_part
+)
 
 logger = logging.getLogger(__name__)
 
@@ -409,6 +414,74 @@ LOCATION_DISTRICTS_MAP = {
     ]
 }
 
+# Sub-query variasi sinonim per kategori utama untuk deep scraping
+# Aktif HANYA saat user memilih 1 kecamatan spesifik agar menjangkau lebih banyak tempat unik
+DEEP_SUB_QUERIES = {
+    # --- 30 Kategori Awal ---
+    'Cafe': ['Cafe', 'Coffee Shop', 'Kedai Kopi', 'Warkop'],
+    'Restoran': ['Restoran', 'Rumah Makan', 'Warung Makan', 'Tempat Makan'],
+    'Sekolah': ['Sekolah', 'SD', 'SMP', 'SMA', 'SMK', 'Madrasah'],
+    'UMKM': ['UMKM', 'Usaha Kecil', 'Koperasi', 'Kerajinan'],
+    'Kedai': ['Kedai', 'Warung Kopi', 'Angkringan', 'Warkop'],
+    'Hotel': ['Hotel', 'Penginapan', 'Guest House', 'Homestay', 'Villa'],
+    'Retail': ['Retail', 'Toko', 'Swalayan', 'Supermarket'],
+    'Konveksi': ['Konveksi', 'Tukang Jahit', 'Tailor', 'Sablon Kaos'],
+    'Pariwisata': ['Pariwisata', 'Tempat Wisata', 'Objek Wisata', 'Taman Rekreasi'],
+    'Warung': ['Warung', 'Warung Nasi', 'Warung Makan', 'Warung Kelontong'],
+    'Puskesmas & Klinik Kesehatan': ['Puskesmas', 'Klinik', 'Dokter Umum', 'Praktik Dokter', 'Rumah Sakit'],
+    'Bengkel & Otomotif': ['Bengkel Motor', 'Bengkel Mobil', 'Ganti Oli', 'Spooring', 'Toko Spare Part'],
+    'Salon & Barber Shop': ['Salon', 'Barber Shop', 'Pangkas Rambut', 'Hair Salon'],
+    'Laundry Kiloan': ['Laundry', 'Laundry Kiloan', 'Binatu', 'Dry Clean'],
+    'Apotek & Toko Obat': ['Apotek', 'Toko Obat', 'Farmasi'],
+    'Ekspedisi & Logistik': ['Ekspedisi', 'JNE', 'J&T', 'SiCepat', 'Pos Indonesia', 'Kurir'],
+    'Tempat Kursus & Bimbingan Belajar': ['Kursus', 'Bimbel', 'Les Privat', 'Tempat Les'],
+    'Percetakan & Fotokopi': ['Percetakan', 'Fotokopi', 'Digital Printing', 'Stempel'],
+    'Spesialis Logam & Bengkel Las': ['Bengkel Las', 'Tukang Las', 'Las Listrik', 'Pagar Besi'],
+    'Pet Shop & Perawatan Hewan': ['Pet Shop', 'Toko Hewan', 'Dokter Hewan', 'Grooming'],
+    'SPBU & Pangkalan Gas LPG': ['SPBU', 'Pom Bensin', 'Pangkalan Gas', 'Agen LPG'],
+    'Toko Bangunan & Material': ['Toko Bangunan', 'Toko Material', 'Bahan Bangunan', 'Toko Cat'],
+    'Fotografer & Studio Foto': ['Studio Foto', 'Fotografer', 'Photo Studio', 'Cetak Foto'],
+    'Rental Kendaraan (Mobil & Motor)': ['Rental Mobil', 'Sewa Mobil', 'Rental Motor', 'Sewa Motor'],
+    'Warteg & Rumah Makan Padang': ['Warteg', 'Rumah Makan Padang', 'Nasi Padang', 'Masakan Padang'],
+    'Penyedia Jasa Konstruksi & Kontraktor': ['Kontraktor', 'Jasa Bangun Rumah', 'Arsitek', 'Tukang Bangunan'],
+    'Toko Buah & Sayur Segar': ['Toko Buah', 'Toko Sayur', 'Pasar Buah', 'Pedagang Sayur'],
+    'Penyedia Layanan Internet & Komputer': ['Toko Komputer', 'Warnet', 'Service Laptop', 'CCTV'],
+    'Kantor Notaris & PPAT': ['Notaris', 'PPAT', 'Kantor Notaris'],
+    'Showroom Jual Beli Kendaraan Bekas': ['Showroom Mobil', 'Dealer Motor', 'Jual Beli Mobil Bekas', 'Motor Bekas'],
+
+    # --- 30 Kategori Baru ---
+    'Masjid': ['Masjid', 'Mushola', 'Masjid Jami', 'Masjid Agung'],
+    'Gereja': ['Gereja', 'Kapel', 'Gereja Katolik', 'GBI', 'HKBP'],
+    'Bank': ['Bank', 'ATM', 'Bank BRI', 'Bank BCA', 'Bank Mandiri', 'Bank BNI'],
+    'Minimarket': ['Minimarket', 'Indomaret', 'Alfamart', 'Toko Kelontong'],
+    'Toko Elektronik': ['Toko Elektronik', 'Toko Listrik', 'Toko Lampu', 'Instalasi Listrik'],
+    'Toko HP': ['Toko HP', 'Counter HP', 'Service HP', 'Aksesoris HP'],
+    'Pabrik': ['Pabrik', 'Industri', 'Manufaktur', 'Pengolahan'],
+    'Gudang': ['Gudang', 'Pergudangan', 'Warehouse', 'Penyimpanan'],
+    'Gym': ['Gym', 'Fitness', 'Pusat Kebugaran', 'Tempat Olahraga'],
+    'Dokter Gigi': ['Dokter Gigi', 'Klinik Gigi', 'Dental', 'Praktek Gigi'],
+    'Optik': ['Optik', 'Kacamata', 'Toko Kacamata', 'Lensa Kontak'],
+    'Toko Kue': ['Toko Kue', 'Bakery', 'Toko Roti', 'Cake Shop', 'Pastry'],
+    'Wedding Organizer': ['Wedding Organizer', 'WO', 'Event Organizer', 'Rias Pengantin', 'Catering'],
+    'Travel Agent': ['Travel Agent', 'Biro Perjalanan', 'Agen Tiket', 'Tour & Travel', 'Umroh'],
+    'Service AC': ['Service AC', 'Cuci AC', 'Jual AC', 'Tukang AC'],
+    'Bengkel Sepeda': ['Bengkel Sepeda', 'Toko Sepeda', 'Spare Part Sepeda'],
+    'Lapangan Olahraga': ['Lapangan Futsal', 'Lapangan Badminton', 'GOR', 'Stadion', 'Kolam Renang'],
+    'TK PAUD': ['TK', 'PAUD', 'Taman Kanak-Kanak', 'Playgroup', 'Kelompok Bermain'],
+    'Toko Pertanian': ['Toko Pertanian', 'Toko Pupuk', 'Toko Bibit', 'Pakan Ternak', 'Saprotan'],
+    'Kolam Pemancingan': ['Kolam Pemancingan', 'Pemancingan', 'Tempat Mancing', 'Kolam Ikan'],
+    'Kantor Kelurahan': ['Kantor Kelurahan', 'Kantor Desa', 'Balai Desa', 'Kantor Kecamatan', 'Dinas'],
+    'Sedot WC': ['Sedot WC', 'Tukang Ledeng', 'Plumbing', 'Perbaikan Pipa'],
+    'Toko Furniture': ['Toko Furniture', 'Toko Meubel', 'Toko Lemari', 'Interior', 'Dekorasi Rumah'],
+    'Toko Emas': ['Toko Emas', 'Perhiasan', 'Gold Shop', 'Cincin Emas'],
+    'Depot Air Minum': ['Depot Air Minum', 'Air Isi Ulang', 'Depot Air', 'Galon'],
+    'Studio Musik': ['Studio Musik', 'Studio Band', 'Studio Rekaman', 'Les Musik', 'Kursus Musik'],
+    'Counter Pulsa': ['Counter Pulsa', 'Konter Pulsa', 'PPOB', 'Token Listrik', 'Paket Data'],
+    'Tukang Cukur': ['Tukang Cukur', 'Pangkas Rambut', 'Potong Rambut'],
+    'Toko Oleh-Oleh': ['Toko Oleh-Oleh', 'Souvenir', 'Cinderamata', 'Makanan Khas'],
+    'Cuci Mobil': ['Cuci Mobil', 'Cuci Motor', 'Car Wash', 'Steam Mobil', 'Salon Mobil'],
+}
+
 
 def get_districts_for_location(location_str):
     """
@@ -423,51 +496,12 @@ def get_districts_for_location(location_str):
     return []
 
 
-def resolve_district_from_text(address_text, query_text="", preset_district=""):
+def resolve_district_from_text(address_text, query_text="", preset_district="", lat=None, lon=None):
     """
-    Deteksi nama kecamatan secara cerdas & universal untuk kota manapun di Indonesia:
-    1. Ekstraksi otomatis dari teks alamat menggunakan pola regex 'Kecamatan X' atau 'Kec. X'
-    2. Cek apakah ada kecamatan yang dikenal di dalam teks alamat
-    3. Jika alamat tidak mencantumkan nama kecamatan, gunakan preset_district (dari query target)
-    4. Cek query_text jika masih belum ditemukan
+    Deteksi nama kecamatan resmi (1 dari 17 kecamatan Karanganyar) secara akurat
+    menggunakan geofencing koordinat poligon resmi dan pencocokan nama desa/kelurahan/kecamatan.
     """
-    combined_addr = address_text or ""
-
-    # 1. Deteksi regex pada teks alamat: "Kecamatan Sukajadi", "Kec. Tebet", dll.
-    m = re.search(r'Kec(?:amatan|\.)\s+([A-Za-z0-9\s]+?)(?:,|$|\.|\d|\-)', combined_addr, re.IGNORECASE)
-    if m:
-        name = m.group(1).strip()
-        if 3 <= len(name) <= 30:
-            return name.title()
-
-    known_districts = [
-        'Colomadu', 'Gondangrejo', 'Jaten', 'Jatipuro', 'Jatiyoso', 
-        'Jenawi', 'Jumantono', 'Jumapolo', 'Karanganyar', 'Karangpandan', 
-        'Kebakkramat', 'Kerjo', 'Matesih', 'Mojogedang', 'Ngargoyoso', 
-        'Tasikmadu', 'Tawangmangu', 'Tebet', 'Kebayoran Baru', 'Kebayoran Lama',
-        'Cilandak', 'Setiabudi', 'Mampang Prapatan', 'Pancoran', 'Pasar Minggu'
-    ]
-    for d in known_districts:
-        if d.lower() in combined_addr.lower():
-            return d
-
-    # 2. Jika tidak ada di alamat, gunakan preset_district (misal dari subdistrict query)
-    if preset_district and preset_district.strip():
-        return preset_district.strip()
-
-    # 3. Cek query_text jika belum ada
-    combined_query = query_text or ""
-    m_q = re.search(r'Kec(?:amatan|\.)\s+([A-Za-z0-9\s]+?)(?:,|$|\.|\d|\-)', combined_query, re.IGNORECASE)
-    if m_q:
-        name = m_q.group(1).strip()
-        if 3 <= len(name) <= 30:
-            return name.title()
-
-    for d in known_districts:
-        if d.lower() in combined_query.lower():
-            return d
-
-    return "-"
+    return resolve_karanganyar_district(lat, lon, address=address_text, query=query_text, target_district=preset_district)
 
 
 def check_is_duplicate(name, lat, lng, address=None):
@@ -602,6 +636,24 @@ def scrape_single_category(worker_id, page, cat_name, cat_idx, total_cats, job_i
         if not is_unlimited and curr_len >= per_category_target:
             break
 
+        # Deteksi awal pergeseran wilayah: jika Google Maps mulai merekomendasikan tempat di luar Karanganyar
+        # (biasanya terjadi saat tempat di area target sudah habis)
+        if curr_len >= 8:
+            sample_recent = links[-6:]
+            outside_streak = 0
+            for s_item in sample_recent:
+                s_href = s_item.get_attribute("href") or ""
+                s_lat, s_lng = parse_coordinates_from_url(s_href)
+                if s_lat is not None and s_lng is not None:
+                    if not is_valid_karanganyar_place(s_lat, s_lng, target_district=active_district):
+                        outside_streak += 1
+            if outside_streak >= 5:
+                logger.info(
+                    f"[Tab-{worker_id}] Google Maps mulai menampilkan tempat di luar wilayah Karanganyar/{active_district or 'Umum'} "
+                    f"({outside_streak}/6 link terakhir). Menghentikan scroll untuk fokus memproses data yang relevan."
+                )
+                break
+
         if curr_len == prev_len:
             consecutive_same_len += 1
             # Nudge scroll: jika data tampak berhenti pada kali ke-2, gerakkan scroll ke atas sedikit lalu hentak ke bawah
@@ -644,13 +696,21 @@ def scrape_single_category(worker_id, page, cat_name, cat_idx, total_cats, job_i
                     s_rating, s_reviews = parse_rating_reviews(main_panel, panel_lines)
                     s_category, s_address = parse_category_and_address(panel_lines, place_name=s_name)
                     s_phone, s_website = parse_phone_and_website(main_panel, panel_lines)
-                    s_district = resolve_district_from_text(s_address, item_full_query, active_district)
+
+                    final_addr = s_address.strip() if s_address and not is_operational_or_status(s_address) and not is_rating_review_text(s_address) else ""
+
+                    # Validasi geofencing Karanganyar untuk tempat tunggal
+                    if not is_valid_karanganyar_place(s_lat, s_lng, address=final_addr, name=s_name, target_district=active_district):
+                        logger.info(f"[Tab-{worker_id}] Melewati tempat tunggal '{s_name}' karena di luar Karanganyar/{active_district} ({s_lat}, {s_lng})")
+                        return
+
+                    s_district = resolve_karanganyar_district(s_lat, s_lng, address=final_addr, query=item_full_query, target_district=active_district)
 
                     s_clean_name = s_name.strip().lower()
                     if s_lat is not None and s_lng is not None:
                         s_key = (s_clean_name, round(s_lat, 4), round(s_lng, 4))
                     else:
-                        s_key = (s_clean_name, (s_address or '').strip().lower())
+                        s_key = (s_clean_name, final_addr.lower())
 
                     with db_lock:
                         if s_href not in shared_stats['seen_urls'] and s_key not in shared_stats['seen_places']:
@@ -659,7 +719,6 @@ def scrape_single_category(worker_id, page, cat_name, cat_idx, total_cats, job_i
                                 shared_stats['seen_places'].add(s_key)
                                 raw_cat = s_category.strip() if is_valid_category_candidate(s_category) else cat_name
                                 final_cat = normalize_category(raw_cat, item_full_query)
-                                final_addr = s_address.strip() if s_address and not is_operational_or_status(s_address) and not is_rating_review_text(s_address) else ""
                                 Place.objects.create(
                                     job_id=job_id,
                                     name=s_name,
@@ -711,13 +770,21 @@ def scrape_single_category(worker_id, page, cat_name, cat_idx, total_cats, job_i
         phone, website = parse_phone_and_website(parent, parent_lines)
         lat, lng = parse_coordinates_from_url(href)
 
-        district_name = resolve_district_from_text(address, item_full_query, active_district)
+        final_address = address.strip() if address and not is_operational_or_status(address) and not is_rating_review_text(address) else ""
+
+        # VALIDASI KETAT GEOFENCING KABUPATEN KARANGANYAR:
+        # Tolak tempat yang berada di Kota Solo/Surakarta, Sukoharjo, Boyolali, atau luar Karanganyar
+        if not is_valid_karanganyar_place(lat, lng, address=final_address, name=name, target_district=active_district):
+            logger.debug(f"[Tab-{worker_id}] Melewati '{name}' karena di luar wilayah target Karanganyar/{active_district} ({lat}, {lng})")
+            continue
+
+        district_name = resolve_karanganyar_district(lat, lng, address=final_address, query=item_full_query, target_district=active_district)
 
         name_clean = name.strip().lower()
         if lat is not None and lng is not None:
             place_key = (name_clean, round(lat, 4), round(lng, 4))
         else:
-            place_key = (name_clean, (address or '').strip().lower())
+            place_key = (name_clean, final_address.lower())
 
         with db_lock:
             if place_key in shared_stats['seen_places']:
@@ -729,7 +796,6 @@ def scrape_single_category(worker_id, page, cat_name, cat_idx, total_cats, job_i
 
             raw_category = category.strip() if is_valid_category_candidate(category) else cat_name
             final_category = normalize_category(raw_category, item_full_query)
-            final_address = address.strip() if address and not is_operational_or_status(address) and not is_rating_review_text(address) else ""
 
             Place.objects.create(
                 job_id=job_id,
@@ -783,12 +849,31 @@ def run_playwright_scraper(job_id, target_count=30):
     # Lakukan dekomposisi per kecamatan secara menyeluruh (Deep Grid Iteration) agar menjangkau pelosok
     districts_list = get_districts_for_location(job.location) if not (job.district and job.district.strip()) else []
 
+    # Deep Scraping: Jika user memilih 1 kecamatan spesifik, expand tiap kategori
+    # menjadi sub-query variasi sinonim agar menjangkau lebih banyak tempat unik
+    has_specific_district = bool(job.district and job.district.strip())
+
     if districts_list:
         for cat_name in sub_queries:
             for dist in districts_list:
                 task_items.append((cat_name, dist))
             # Tambahkan pencarian kabupaten umum untuk menjangkau tempat perbatasan & pusat
             task_items.append((cat_name, ""))
+    elif has_specific_district:
+        # DEEP MODE: Expand setiap kategori ke sub-query sinonim
+        single_dist = job.district.strip()
+        for cat_name in sub_queries:
+            sub_variations = DEEP_SUB_QUERIES.get(cat_name.strip(), None)
+            if sub_variations:
+                for variant in sub_variations:
+                    task_items.append((variant, single_dist))
+            else:
+                # Jika tidak ada mapping sinonim, gunakan query asli
+                task_items.append((cat_name, single_dist))
+        logger.info(
+            f"[Deep Mode] Kategori '{', '.join(sub_queries)}' di-expand menjadi "
+            f"{len(task_items)} sub-query variasi untuk Kecamatan {single_dist}"
+        )
     else:
         single_dist = job.district.strip() if job.district else ""
         for cat_name in sub_queries:
@@ -981,6 +1066,12 @@ def run_places_api_scraper(job_id, api_key, target_count=30):
                 lat = loc.get("latitude")
                 lng = loc.get("longitude")
 
+                # Validasi geofencing Karanganyar
+                if not is_valid_karanganyar_place(lat, lng, address=address, name=display_name, target_district=job.district):
+                    continue
+
+                district_name = resolve_karanganyar_district(lat, lng, address=address, query=full_query, target_district=job.district)
+
                 # Cek aturan deduplikasi: HANYA skip jika Nama DAN Geolokasi SAMA
                 if check_is_duplicate(display_name, lat, lng, address):
                     continue
@@ -989,7 +1080,7 @@ def run_places_api_scraper(job_id, api_key, target_count=30):
                     job=job,
                     name=display_name,
                     category=category,
-                    district=job.district,
+                    district=district_name,
                     address=address,
                     phone=phone,
                     website=website,

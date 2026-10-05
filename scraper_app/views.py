@@ -347,3 +347,40 @@ def clear_all_data(request):
 
     return redirect('dashboard')
 
+
+def karanganyar_geojson_api(request):
+    """
+    Sajikan file GeoJSON batas resmi Kabupaten Karanganyar (peta_kab_202513313.geojson)
+    untuk visualisasi poligon di peta web Leaflet
+    """
+    import os, json
+    from django.conf import settings
+    path = os.path.join(settings.BASE_DIR, 'peta_kab_202513313.geojson')
+    if not os.path.exists(path):
+        path = os.path.join(os.path.dirname(__file__), 'data', 'karanganyar_boundary.json')
+    if os.path.exists(path):
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return JsonResponse(data, safe=False)
+    return JsonResponse({'error': 'GeoJSON tidak ditemukan'}, status=404)
+
+
+def places_map_data_api(request):
+    """
+    API JSON untuk titik-titik tempat di peta (koordinat, nama, kategori, kecamatan)
+    """
+    district_filter = request.GET.get('district', '').strip()
+    category_filter = request.GET.get('category', '').strip()
+
+    qs = Place.objects.filter(latitude__isnull=False, longitude__isnull=False)
+    if district_filter:
+        qs = qs.filter(district__iexact=district_filter)
+    if category_filter:
+        qs = qs.filter(category__icontains=category_filter)
+
+    data = list(qs.values(
+        'id', 'name', 'category', 'district', 'rating', 'reviews_count',
+        'latitude', 'longitude', 'google_maps_url'
+    )[:600])
+    return JsonResponse({'total': len(data), 'places': data})
+

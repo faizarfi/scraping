@@ -12,4 +12,6 @@ urlpatterns = [
     path('export/excel/', views.export_excel, name='export_excel'),
     path('export/csv/', views.export_csv, name='export_csv'),
     path('clear-all/', views.clear_all_data, name='clear_all_data'),
+    path('api/karanganyar-geojson/', views.karanganyar_geojson_api, name='karanganyar_geojson_api'),
+    path('api/places-map-data/', views.places_map_data_api, name='places_map_data_api'),
 ]

@@ -3,9 +3,12 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-db.sqlite3
+db.sqlite3*
 media/
 staticfiles/
 *.xlsx
 *.csv
+*.geojson
+peta_kab_202513313.geojson
 .env
+

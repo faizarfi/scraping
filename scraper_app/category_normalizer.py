@@ -101,7 +101,97 @@ CATEGORY_MAPPING_RULES = [
     (r'\b(umkm|ksp|koperasi|kerajinan)\b', 'UMKM & Bisnis Lokal'),
 
     # 26. Toko & Retail Umum
-    (r'\b(swalayan|minimarket|supermarket|kelontong|pasar|toserba)\b', 'Retail & Toko Swalayan'),
+    (r'\b(swalayan|supermarket|kelontong|pasar|toserba)\b', 'Retail & Toko Swalayan'),
+
+    # 27. Masjid & Mushola
+    (r'\b(masjid|mushola|musala|musholla|langgar|surau)\b', 'Masjid & Mushola'),
+
+    # 28. Gereja & Tempat Ibadah
+    (r'\b(gereja|kapel|chapel|vihara|pura|klenteng|tempat ibadah)\b', 'Gereja & Tempat Ibadah'),
+
+    # 29. Bank & ATM
+    (r'\b(bank|atm|bri|bca|mandiri|bni|btn|bsi|pegadaian)\b', 'Bank & ATM'),
+
+    # 30. Minimarket & Toko Kelontong
+    (r'\b(minimarket|indomaret|alfamart|alfamidi|lawson|circle k)\b', 'Minimarket & Toko Kelontong'),
+
+    # 31. Toko Elektronik
+    (r'\b(elektronik|elektrik|listrik|lampu|kabel)\b', 'Toko Elektronik'),
+
+    # 32. Toko HP & Aksesoris
+    (r'\b(handphone|hp|smartphone|gadget|aksesoris hp|casing|service hp)\b', 'Toko HP & Aksesoris'),
+
+    # 33. Pabrik & Manufaktur
+    (r'\b(pabrik|manufaktur|industri|pengolahan)\b', 'Pabrik & Manufaktur'),
+
+    # 34. Gudang & Pergudangan
+    (r'\b(gudang|pergudangan|warehouse|storage)\b', 'Gudang & Pergudangan'),
+
+    # 35. Gym & Pusat Kebugaran
+    (r'\b(gym|fitness|kebugaran|fitnes|pusat kebugaran|aerobik|yoga)\b', 'Gym & Pusat Kebugaran'),
+
+    # 36. Dokter Gigi & Dental
+    (r'\b(dokter gigi|dental|gigi|ortodonti)\b', 'Dokter Gigi & Dental'),
+
+    # 37. Optik & Kacamata
+    (r'\b(optik|kacamata|lensa|optical)\b', 'Optik & Kacamata'),
+
+    # 38. Toko Kue & Bakery
+    (r'\b(kue|bakery|roti|pastry|tart|cake|bakpao|donat)\b', 'Toko Kue & Bakery'),
+
+    # 39. EO & Wedding Organizer
+    (r'\b(wedding|pernikahan|event organizer|eo|dekorasi pelaminan|rias pengantin|catering)\b', 'EO & Wedding Organizer'),
+
+    # 40. Travel Agent & Tiket
+    (r'\b(travel agent|agen perjalanan|biro perjalanan|tiket|tour|wisata tur|umroh|haji)\b', 'Travel Agent & Tiket'),
+
+    # 41. Service AC & Elektronik
+    (r'\b(service ac|perbaikan ac|jual ac|instalasi ac|cuci ac)\b', 'Service AC & Elektronik'),
+
+    # 42. Bengkel Sepeda
+    (r'\b(bengkel sepeda|sepeda|bicycle|bike shop|toko sepeda)\b', 'Bengkel Sepeda'),
+
+    # 43. Taman & Lapangan Olahraga
+    (r'\b(lapangan|stadion|gelanggang|gor|taman bermain|futsal|badminton|tenis)\b', 'Taman & Lapangan Olahraga'),
+
+    # 44. TK & PAUD
+    (r'\b(tk|paud|taman kanak|playgroup|play group|kelompok bermain)\b', 'TK & PAUD'),
+
+    # 45. Toko Pertanian & Pupuk
+    (r'\b(pertanian|pupuk|pestisida|benih|bibit|pakan ternak|tani)\b', 'Toko Pertanian & Pupuk'),
+
+    # 46. Kolam Pemancingan
+    (r'\b(pemancingan|mancing|kolam pancing|ikan|perikanan)\b', 'Kolam Pemancingan'),
+
+    # 47. Kantor Pemerintahan
+    (r'\b(kantor kelurahan|kantor desa|kantor kecamatan|kantor camat|kantor lurah|kantor bupati|dinas|balai desa)\b', 'Kantor Pemerintahan'),
+
+    # 48. Jasa Sedot WC & Plumbing
+    (r'\b(sedot wc|plumbing|saluran air|pipa|tukang ledeng|septik|septic)\b', 'Jasa Sedot WC & Plumbing'),
+
+    # 49. Toko Furniture & Meubel
+    (r'\b(furniture|meubel|mebel|kursi|meja|lemari|sofa|interior|dekorasi rumah)\b', 'Toko Furniture & Meubel'),
+
+    # 50. Toko Emas & Perhiasan
+    (r'\b(emas|perhiasan|jewelry|jewellery|cincin|kalung|gelang emas)\b', 'Toko Emas & Perhiasan'),
+
+    # 51. Depot Air Minum Isi Ulang
+    (r'\b(depot air|air minum|isi ulang|galon|air mineral)\b', 'Depot Air Minum Isi Ulang'),
+
+    # 52. Studio Musik & Latihan Band
+    (r'\b(studio musik|latihan band|studio rekaman|recording|kursus musik|les musik)\b', 'Studio Musik & Latihan Band'),
+
+    # 53. Counter Pulsa & PPOB
+    (r'\b(pulsa|ppob|counter hp|konter|token listrik|paket data)\b', 'Counter Pulsa & PPOB'),
+
+    # 54. Tukang Cukur Tradisional
+    (r'\b(tukang cukur|pangkas rambut|pangkas|potong rambut)\b', 'Tukang Cukur Tradisional'),
+
+    # 55. Toko Oleh-Oleh & Souvenir
+    (r'\b(oleh-oleh|oleh oleh|souvenir|suvenir|cinderamata|khas daerah)\b', 'Toko Oleh-Oleh & Souvenir'),
+
+    # 56. Jasa Cuci Mobil & Motor
+    (r'\b(cuci mobil|cuci motor|car wash|carwash|steam mobil|salon mobil|detailing)\b', 'Jasa Cuci Mobil & Motor'),
 ]
 
 

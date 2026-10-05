@@ -5,40 +5,24 @@ import pandas as pd
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from .category_normalizer import normalize_category
+from .geo_validator import resolve_karanganyar_district
 
 logger = logging.getLogger(__name__)
 
 def resolve_district(place):
     """
-    Pastikan kolom Kecamatan di Excel selalu terisi rapi:
-    1. Ambil district tersimpan di database
-    2. Fallback: Ekstrak nama kecamatan dari alamat lengkap via regex
-    3. Fallback: Ekstrak dari query pencarian
-    4. Default: '-' jika tidak ditemukan
+    Pastikan kolom Kecamatan di Excel selalu terisi rapi & akurat sesuai 17 kecamatan Karanganyar:
+    1. Deteksi berbasis geofencing koordinat (latitude & longitude)
+    2. Deteksi desa/kelurahan atau nama kecamatan di teks alamat
+    3. Fallback district tersimpan
     """
-    if place.district and place.district.strip() and place.district.strip() != '-':
-        return place.district.strip()
-
-    combined = f"{place.address or ''} {place.search_query or ''}"
-
-    # Deteksi regex umum: "Kecamatan Sukajadi", "Kec. Tebet", "Kecamatan Senen", dll.
-    m = re.search(r'Kec(?:amatan|\.)\s+([A-Za-z0-9\s]+?)(?:,|$|\.|\d|\-)', combined, re.IGNORECASE)
-    if m:
-        name = m.group(1).strip()
-        if 3 <= len(name) <= 30:
-            return name.title()
-
-    known_districts = [
-        'Colomadu', 'Gondangrejo', 'Jaten', 'Jatipuro', 'Jatiyoso', 
-        'Jenawi', 'Jumantono', 'Jumapolo', 'Karanganyar', 'Karangpandan', 
-        'Kebakkramat', 'Kerjo', 'Matesih', 'Mojogedang', 'Ngargoyoso', 
-        'Tasikmadu', 'Tawangmangu'
-    ]
-    for d in known_districts:
-        if d.lower() in combined.lower():
-            return d
-
-    return "-"
+    return resolve_karanganyar_district(
+        place.latitude,
+        place.longitude,
+        address=place.address,
+        query=place.search_query,
+        target_district=place.district
+    )
 
 
 OPERATIONAL_KEYWORDS = {

@@ -1,5 +1,155 @@
 {% extends 'scraper_app/base.html' %}
 
+{% block extra_head %}
+<!-- Leaflet CSS for Boundary and Geofencing Map -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<style>
+    .map-card-container {
+        margin-bottom: 24px;
+        position: relative;
+    }
+    #karanganyar-map {
+        height: 480px;
+        width: 100%;
+        border-radius: var(--radius-lg);
+        background: #0f172a;
+        z-index: 10;
+        border: 1px solid var(--border-subtle);
+    }
+    .map-header-badges {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .badge-geojson {
+        background: rgba(56, 189, 248, 0.12);
+        color: #38bdf8;
+        border: 1px solid rgba(56, 189, 248, 0.3);
+        padding: 4px 10px;
+        border-radius: 9999px;
+        font-size: 0.73rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+    }
+    .badge-geofence-active {
+        background: rgba(16, 185, 129, 0.12);
+        color: #34d399;
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        padding: 4px 10px;
+        border-radius: 9999px;
+        font-size: 0.73rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+    }
+    .map-controls-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+    }
+    .map-focus-buttons {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+    .btn-focus {
+        background: rgba(30, 41, 59, 0.8);
+        border: 1px solid var(--border-medium);
+        color: var(--text-main);
+        padding: 6px 12px;
+        border-radius: var(--radius-sm);
+        font-size: 0.78rem;
+        font-weight: 500;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        transition: var(--transition);
+    }
+    .btn-focus:hover {
+        background: rgba(59, 130, 246, 0.2);
+        border-color: var(--primary);
+        color: #60a5fa;
+    }
+    .btn-focus.active {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: #fff;
+    }
+    /* Leaflet Dark Theme Overrides */
+    .leaflet-popup-content-wrapper {
+        background: rgba(15, 23, 42, 0.95) !important;
+        color: #f8fafc !important;
+        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+        border-radius: 10px !important;
+        backdrop-filter: blur(12px) !important;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6) !important;
+        padding: 6px !important;
+    }
+    .leaflet-popup-tip {
+        background: rgba(15, 23, 42, 0.95) !important;
+        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    }
+    .leaflet-container {
+        font-family: 'Inter', sans-serif !important;
+    }
+    .map-tooltip-content {
+        font-size: 0.82rem;
+        line-height: 1.4;
+    }
+    .map-tooltip-content strong {
+        color: #60a5fa;
+        font-size: 0.9rem;
+        display: block;
+        margin-bottom: 2px;
+    }
+    .map-tooltip-badge {
+        display: inline-block;
+        background: rgba(59, 130, 246, 0.15);
+        color: #93c5fd;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        margin-top: 4px;
+    }
+    .map-info-legend {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        font-size: 0.76rem;
+        color: var(--text-muted);
+        flex-wrap: wrap;
+        margin-top: 10px;
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .legend-line {
+        width: 16px;
+        height: 3px;
+        background: #38bdf8;
+        border-radius: 2px;
+    }
+    .legend-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #10b981;
+        box-shadow: 0 0 6px #10b981;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <!-- Hero Section -->
 <div class="hero-section">
@@ -119,6 +269,36 @@
                         <option value="Penyedia Layanan Internet & Komputer">Internet & Komputer</option>
                         <option value="Kantor Notaris & PPAT">Notaris & PPAT</option>
                         <option value="Showroom Jual Beli Kendaraan Bekas">Showroom Kendaraan</option>
+                        <option value="Masjid">Masjid & Mushola</option>
+                        <option value="Gereja">Gereja & Ibadah</option>
+                        <option value="Bank">Bank & ATM</option>
+                        <option value="Minimarket">Minimarket</option>
+                        <option value="Toko Elektronik">Toko Elektronik</option>
+                        <option value="Toko HP">Toko HP & Aksesoris</option>
+                        <option value="Pabrik">Pabrik & Manufaktur</option>
+                        <option value="Gudang">Gudang & Pergudangan</option>
+                        <option value="Gym">Gym & Kebugaran</option>
+                        <option value="Dokter Gigi">Dokter Gigi</option>
+                        <option value="Optik">Optik & Kacamata</option>
+                        <option value="Toko Kue">Toko Kue & Bakery</option>
+                        <option value="Wedding Organizer">Wedding Organizer</option>
+                        <option value="Travel Agent">Travel Agent</option>
+                        <option value="Service AC">Service AC</option>
+                        <option value="Bengkel Sepeda">Bengkel Sepeda</option>
+                        <option value="Lapangan Olahraga">Lapangan Olahraga</option>
+                        <option value="TK PAUD">TK & PAUD</option>
+                        <option value="Toko Pertanian">Toko Pertanian</option>
+                        <option value="Kolam Pemancingan">Kolam Pemancingan</option>
+                        <option value="Kantor Kelurahan">Kantor Pemerintahan</option>
+                        <option value="Sedot WC">Sedot WC & Plumbing</option>
+                        <option value="Toko Furniture">Toko Furniture</option>
+                        <option value="Toko Emas">Toko Emas & Perhiasan</option>
+                        <option value="Depot Air Minum">Depot Air Minum</option>
+                        <option value="Studio Musik">Studio Musik</option>
+                        <option value="Counter Pulsa">Counter Pulsa & PPOB</option>
+                        <option value="Tukang Cukur">Tukang Cukur</option>
+                        <option value="Toko Oleh-Oleh">Toko Oleh-Oleh</option>
+                        <option value="Cuci Mobil">Cuci Mobil & Motor</option>
                     </select>
                 </div>
             </div>
@@ -200,7 +380,7 @@
             <div style="display: flex; align-items: center; gap: 8px;">
                 <button type="button" class="btn btn-secondary btn-sm" id="btn-select-all-cats" style="font-size: 0.76rem; padding: 4px 10px; height: 28px;">
                     <i data-lucide="layers" class="lucide-sm"></i>
-                    <span>Pilih Semua 30 Kategori (Gabung Sekaligus)</span>
+                    <span>Pilih Semua 60 Kategori (Gabung Sekaligus)</span>
                 </button>
                 <button type="button" class="btn btn-ghost btn-sm" id="btn-reset-cats" style="font-size: 0.76rem; padding: 4px 10px; height: 28px; display: none;">
                     <i data-lucide="rotate-ccw" class="lucide-sm"></i>
@@ -299,6 +479,96 @@
             <button type="button" class="category-chip" data-query="Showroom Jual Beli Kendaraan Bekas">
                 <i data-lucide="car-front" class="lucide-sm"></i><span>Showroom Kendaraan</span>
             </button>
+            <button type="button" class="category-chip" data-query="Masjid">
+                <i data-lucide="landmark" class="lucide-sm"></i><span>Masjid & Mushola</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Gereja">
+                <i data-lucide="church" class="lucide-sm"></i><span>Gereja & Ibadah</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Bank">
+                <i data-lucide="banknote" class="lucide-sm"></i><span>Bank & ATM</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Minimarket">
+                <i data-lucide="shopping-cart" class="lucide-sm"></i><span>Minimarket</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Toko Elektronik">
+                <i data-lucide="tv" class="lucide-sm"></i><span>Toko Elektronik</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Toko HP">
+                <i data-lucide="smartphone" class="lucide-sm"></i><span>Toko HP & Aksesoris</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Pabrik">
+                <i data-lucide="factory" class="lucide-sm"></i><span>Pabrik & Manufaktur</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Gudang">
+                <i data-lucide="warehouse" class="lucide-sm"></i><span>Gudang</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Gym">
+                <i data-lucide="dumbbell" class="lucide-sm"></i><span>Gym & Kebugaran</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Dokter Gigi">
+                <i data-lucide="smile" class="lucide-sm"></i><span>Dokter Gigi</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Optik">
+                <i data-lucide="glasses" class="lucide-sm"></i><span>Optik & Kacamata</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Toko Kue">
+                <i data-lucide="cake" class="lucide-sm"></i><span>Toko Kue & Bakery</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Wedding Organizer">
+                <i data-lucide="heart" class="lucide-sm"></i><span>Wedding Organizer</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Travel Agent">
+                <i data-lucide="plane" class="lucide-sm"></i><span>Travel Agent</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Service AC">
+                <i data-lucide="thermometer" class="lucide-sm"></i><span>Service AC</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Bengkel Sepeda">
+                <i data-lucide="bike" class="lucide-sm"></i><span>Bengkel Sepeda</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Lapangan Olahraga">
+                <i data-lucide="trophy" class="lucide-sm"></i><span>Lapangan Olahraga</span>
+            </button>
+            <button type="button" class="category-chip" data-query="TK PAUD">
+                <i data-lucide="baby" class="lucide-sm"></i><span>TK & PAUD</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Toko Pertanian">
+                <i data-lucide="sprout" class="lucide-sm"></i><span>Toko Pertanian</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Kolam Pemancingan">
+                <i data-lucide="fish" class="lucide-sm"></i><span>Kolam Pemancingan</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Kantor Kelurahan">
+                <i data-lucide="building" class="lucide-sm"></i><span>Kantor Pemerintahan</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Sedot WC">
+                <i data-lucide="droplets" class="lucide-sm"></i><span>Sedot WC & Plumbing</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Toko Furniture">
+                <i data-lucide="armchair" class="lucide-sm"></i><span>Toko Furniture</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Toko Emas">
+                <i data-lucide="gem" class="lucide-sm"></i><span>Toko Emas & Perhiasan</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Depot Air Minum">
+                <i data-lucide="droplet" class="lucide-sm"></i><span>Depot Air Minum</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Studio Musik">
+                <i data-lucide="music" class="lucide-sm"></i><span>Studio Musik</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Counter Pulsa">
+                <i data-lucide="signal" class="lucide-sm"></i><span>Counter Pulsa & PPOB</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Tukang Cukur">
+                <i data-lucide="scissors" class="lucide-sm"></i><span>Tukang Cukur</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Toko Oleh-Oleh">
+                <i data-lucide="gift" class="lucide-sm"></i><span>Toko Oleh-Oleh</span>
+            </button>
+            <button type="button" class="category-chip" data-query="Cuci Mobil">
+                <i data-lucide="droplets" class="lucide-sm"></i><span>Cuci Mobil & Motor</span>
+            </button>
         </div>
 
         <!-- Engine Selector Cards -->
@@ -373,6 +643,99 @@
     </div>
 </div>
 {% endif %}
+
+<!-- Peta Wilayah & Geofencing Karanganyar (Berdasarkan peta_kab_202513313.geojson) -->
+<div class="glass-card map-card-container">
+    <div class="card-header" style="flex-wrap: wrap; gap: 10px;">
+        <div class="card-title">
+            <div class="card-title-icon" style="background: rgba(56, 189, 248, 0.12); color: #38bdf8;">
+                <i data-lucide="map"></i>
+            </div>
+            <div>
+                <span>Peta Geofencing & Sebaran Data Terverifikasi</span>
+                <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 2px;">
+                    Validasi Spasial Koordinat Berdasarkan Batas Resmi <strong>peta_kab_202513313.geojson</strong>
+                </div>
+            </div>
+        </div>
+        <div class="map-header-badges">
+            <span class="badge-geojson">
+                <i data-lucide="shield-check" class="lucide-sm"></i>
+                <span>GeoJSON Resmi BPS 2025 Aktif</span>
+            </span>
+            <span class="badge-geofence-active">
+                <i data-lucide="crosshair" class="lucide-sm"></i>
+                <span>Geofencing Strict Aktif</span>
+            </span>
+            <span class="badge-district" id="map-places-count">
+                {{ total_places }} Tempat di Peta
+            </span>
+        </div>
+    </div>
+
+    <!-- Map Controls Bar -->
+    <div class="map-controls-row">
+        <div class="map-focus-buttons">
+            <button type="button" class="btn-focus active" id="btn-focus-all" onclick="focusMap('all')">
+                <i data-lucide="maximize-2" class="lucide-sm"></i>
+                <span>Seluruh Karanganyar</span>
+            </button>
+            <button type="button" class="btn-focus" id="btn-focus-colomadu" onclick="focusMap('colomadu')">
+                <i data-lucide="compass" class="lucide-sm"></i>
+                <span>Kec. Colomadu (Eksklave Barat)</span>
+            </button>
+            <button type="button" class="btn-focus" id="btn-focus-east" onclick="focusMap('east')">
+                <i data-lucide="mountain" class="lucide-sm"></i>
+                <span>Karanganyar Timur (16 Kecamatan)</span>
+            </button>
+        </div>
+        
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <select id="map-district-filter" class="form-select-control" style="font-size: 0.78rem; padding: 5px 10px; max-width: 200px;" onchange="filterMapData()">
+                <option value="">Semua Kecamatan</option>
+                <option value="Colomadu">Colomadu</option>
+                <option value="Gondangrejo">Gondangrejo</option>
+                <option value="Jaten">Jaten</option>
+                <option value="Jatipuro">Jatipuro</option>
+                <option value="Jatiyoso">Jatiyoso</option>
+                <option value="Jenawi">Jenawi</option>
+                <option value="Jumantono">Jumantono</option>
+                <option value="Jumapolo">Jumapolo</option>
+                <option value="Karanganyar">Karanganyar (Kota)</option>
+                <option value="Karangpandan">Karangpandan</option>
+                <option value="Kebakkramat">Kebakkramat</option>
+                <option value="Kerjo">Kerjo</option>
+                <option value="Matesih">Matesih</option>
+                <option value="Mojogedang">Mojogedang</option>
+                <option value="Ngargoyoso">Ngargoyoso</option>
+                <option value="Tasikmadu">Tasikmadu</option>
+                <option value="Tawangmangu">Tawangmangu</option>
+            </select>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="reloadMapData()" title="Muat Ulang Titik Peta" style="height: 30px; padding: 4px 8px;">
+                <i data-lucide="refresh-cw" class="lucide-sm"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Map Display Div -->
+    <div id="karanganyar-map"></div>
+
+    <!-- Map Info & Legend -->
+    <div class="map-info-legend">
+        <div class="legend-item">
+            <div class="legend-line"></div>
+            <span>Batas Resmi Poligon (peta_kab_202513313.geojson)</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-dot"></div>
+            <span>Titik Bisnis Terverifikasi Dalam Batas (Non-Luar Wilayah)</span>
+        </div>
+        <div class="legend-item" style="margin-left: auto;">
+            <i data-lucide="info" class="lucide-sm" style="color: #60a5fa;"></i>
+            <span>Tempat di luar garis batas poligon otomatis ditolak &amp; dibersihkan dari database.</span>
+        </div>
+    </div>
+</div>
 
 <!-- Data Table Card -->
 <div class="glass-card">
@@ -627,3 +990,176 @@
     </div>
 </div>
 {% endblock %}
+
+{% block extra_scripts %}
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+    let leafletMap = null;
+    let geojsonLayer = null;
+    let markersLayer = null;
+    let geojsonData = null;
+    let totalGeoBounds = null;
+
+    function initKaranganyarMap() {
+        const mapContainer = document.getElementById('karanganyar-map');
+        if (!mapContainer) return;
+
+        // Inisialisasi peta berpusat di Kabupaten Karanganyar
+        leafletMap = L.map('karanganyar-map', {
+            center: [-7.60, 110.95],
+            zoom: 11,
+            zoomControl: true
+        });
+
+        // CartoDB Dark Matter Tiles untuk tampilan dark mode yang elegan
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 19
+        }).addTo(leafletMap);
+
+        markersLayer = L.layerGroup().addTo(leafletMap);
+
+        // Muat Batas Resmi dari GeoJSON
+        fetch('/api/karanganyar-geojson/')
+            .then(res => res.json())
+            .then(data => {
+                geojsonData = data;
+                geojsonLayer = L.geoJSON(data, {
+                    style: function(feature) {
+                        return {
+                            color: '#38bdf8',
+                            weight: 2.5,
+                            opacity: 0.95,
+                            fillColor: '#0284c7',
+                            fillOpacity: 0.12,
+                            dashArray: 'none'
+                        };
+                    },
+                    onEachFeature: function(feature, layer) {
+                        layer.bindPopup(`
+                            <div style="font-size: 0.85rem; padding: 4px;">
+                                <strong style="color: #38bdf8; font-size: 0.95rem;">Kabupaten Karanganyar</strong><br>
+                                <span style="color: #94a3b8; font-size: 0.78rem;">Batas Resmi Spasial BPS 2025</span><br>
+                                <span style="display:inline-block; margin-top:4px; font-size:0.75rem; background:rgba(56,189,248,0.15); color:#38bdf8; padding:2px 6px; border-radius:4px;">
+                                    peta_kab_202513313.geojson
+                                </span>
+                            </div>
+                        `);
+                    }
+                }).addTo(leafletMap);
+
+                totalGeoBounds = geojsonLayer.getBounds();
+                leafletMap.fitBounds(totalGeoBounds, { padding: [20, 20] });
+            })
+            .catch(err => console.error("Gagal memuat batas GeoJSON:", err));
+
+        // Muat titik tempat terverifikasi
+        loadPlacesData();
+    }
+
+    function loadPlacesData(district = '') {
+        if (!markersLayer) return;
+        markersLayer.clearLayers();
+
+        let url = '/api/places-map-data/';
+        if (district) {
+            url += '?district=' + encodeURIComponent(district);
+        }
+
+        fetch(url)
+            .then(res => res.json())
+            .then(res => {
+                const badge = document.getElementById('map-places-count');
+                if (badge) {
+                    badge.textContent = `${res.total} Tempat di Peta`;
+                }
+
+                res.places.forEach(p => {
+                    if (p.latitude && p.longitude) {
+                        const marker = L.circleMarker([p.latitude, p.longitude], {
+                            radius: 5,
+                            fillColor: '#10b981',
+                            color: '#ffffff',
+                            weight: 1.5,
+                            opacity: 1,
+                            fillOpacity: 0.85
+                        });
+
+                        const popupHtml = `
+                            <div class="map-tooltip-content">
+                                <strong>${p.name}</strong>
+                                <div style="color: #94a3b8; font-size: 0.76rem; margin-top: 2px;">
+                                    ${p.category ? p.category : 'Bisnis'} &bull; ⭐ ${p.rating ? p.rating : '-'} (${p.reviews_count ? p.reviews_count : 0} ulasan)
+                                </div>
+                                <div style="margin-top: 4px;">
+                                    <span class="map-tooltip-badge">${p.district ? p.district : 'Karanganyar'}</span>
+                                </div>
+                                ${p.google_maps_url ? `
+                                    <a href="${p.google_maps_url}" target="_blank" style="display: inline-flex; align-items: center; gap: 4px; color: #60a5fa; font-size: 0.75rem; margin-top: 8px; text-decoration: none;">
+                                        Lihat di Google Maps &rarr;
+                                    </a>
+                                ` : ''}
+                            </div>
+                        `;
+                        marker.bindPopup(popupHtml);
+                        markersLayer.addLayer(marker);
+                    }
+                });
+            })
+            .catch(err => console.error("Gagal memuat data tempat:", err));
+    }
+
+    function focusMap(target) {
+        document.querySelectorAll('.btn-focus').forEach(b => b.classList.remove('active'));
+        if (target === 'all') {
+            document.getElementById('btn-focus-all')?.classList.add('active');
+            if (totalGeoBounds && leafletMap) {
+                leafletMap.fitBounds(totalGeoBounds, { padding: [20, 20] });
+            } else if (leafletMap) {
+                leafletMap.setView([-7.60, 110.95], 11);
+            }
+        } else if (target === 'colomadu') {
+            document.getElementById('btn-focus-colomadu')?.classList.add('active');
+            if (leafletMap) {
+                // Koordinat tengah eksklave Colomadu
+                leafletMap.flyTo([-7.535, 110.755], 13);
+            }
+        } else if (target === 'east') {
+            document.getElementById('btn-focus-east')?.classList.add('active');
+            if (leafletMap) {
+                // Koordinat wilayah utama Karanganyar timur (16 kecamatan)
+                leafletMap.flyTo([-7.60, 111.02], 11);
+            }
+        }
+    }
+
+    function filterMapData() {
+        const sel = document.getElementById('map-district-filter');
+        const district = sel ? sel.value : '';
+        loadPlacesData(district);
+
+        // Jika filter Colomadu dipilih, otomatis fokuskan kamera ke Colomadu
+        if (district.toLowerCase() === 'colomadu') {
+            focusMap('colomadu');
+        } else if (district) {
+            focusMap('east');
+        }
+    }
+
+    function reloadMapData() {
+        const sel = document.getElementById('map-district-filter');
+        const district = sel ? sel.value : '';
+        loadPlacesData(district);
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        initKaranganyarMap();
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+    });
+</script>
+{% endblock %}
+
